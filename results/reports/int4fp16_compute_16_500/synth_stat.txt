@@ -1,0 +1,80 @@
+
+19. Printing statistics.
+
+=== int4fp16_compute_16 ===
+
+   Number of wires:              37649
+   Number of wire bits:          38990
+   Number of public wires:           7
+   Number of public wire bits:    1348
+   Number of ports:                  7
+   Number of port bits:           1348
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              38154
+     AND2_X1                       318
+     AND2_X2                        70
+     AND2_X4                        27
+     AND3_X1                        89
+     AND3_X2                         7
+     AND4_X1                        18
+     AOI21_X1                     1176
+     AOI21_X2                      146
+     AOI21_X4                       14
+     AOI22_X1                      110
+     AOI22_X2                        4
+     BUF_X1                        407
+     BUF_X16                         2
+     BUF_X2                        163
+     BUF_X32                         2
+     BUF_X4                        213
+     BUF_X8                         51
+     CLKBUF_X1                       1
+     CLKBUF_X2                      11
+     CLKBUF_X3                       8
+     INV_X1                       6155
+     INV_X16                         1
+     INV_X2                        390
+     INV_X4                        118
+     INV_X8                         15
+     MUX2_X1                        18
+     NAND2_X1                    13449
+     NAND2_X2                     1315
+     NAND2_X4                      483
+     NAND3_X1                     4261
+     NAND3_X2                      336
+     NAND3_X4                       64
+     NAND4_X1                      427
+     NAND4_X2                        6
+     NAND4_X4                        1
+     NOR2_X1                      2783
+     NOR2_X2                       750
+     NOR2_X4                       331
+     NOR3_X1                       246
+     NOR3_X2                        31
+     NOR3_X4                         7
+     NOR4_X1                        70
+     NOR4_X2                         2
+     NOR4_X4                        17
+     OAI211_X2                      14
+     OAI21_X1                     2263
+     OAI21_X2                      183
+     OAI21_X4                       18
+     OAI221_X1                     126
+     OAI22_X1                      135
+     OAI22_X2                        5
+     OR2_X1                        270
+     OR2_X2                         60
+     OR2_X4                         18
+     OR3_X1                         20
+     OR3_X2                          1
+     OR4_X1                          2
+     XNOR2_X1                      748
+     XNOR2_X2                       85
+     XOR2_X1                        83
+     XOR2_X2                        10
+
+   Chip area for module '\int4fp16_compute_16': 36727.684000
+     of which used for sequential elements: 0.000000 (0.00%)
+

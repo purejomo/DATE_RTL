@@ -1,0 +1,82 @@
+
+19. Printing statistics.
+
+=== hbmpim_compute_16 ===
+
+   Number of wires:              48855
+   Number of wire bits:          50385
+   Number of public wires:           6
+   Number of public wire bits:    1536
+   Number of ports:                  6
+   Number of port bits:           1536
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              49361
+     AND2_X1                       382
+     AND2_X2                        66
+     AND2_X4                        20
+     AND3_X1                       104
+     AND3_X2                        12
+     AND3_X4                         1
+     AND4_X1                        17
+     AOI21_X1                     1323
+     AOI21_X2                      137
+     AOI21_X4                       25
+     AOI22_X1                      145
+     AOI22_X2                       10
+     AOI22_X4                        1
+     BUF_X1                        312
+     BUF_X16                         3
+     BUF_X2                        228
+     BUF_X4                        285
+     BUF_X8                         32
+     CLKBUF_X1                       3
+     CLKBUF_X2                      25
+     CLKBUF_X3                      23
+     INV_X1                       8408
+     INV_X2                        456
+     INV_X4                        126
+     INV_X8                          4
+     MUX2_X1                        29
+     MUX2_X2                         2
+     NAND2_X1                    17700
+     NAND2_X2                     1319
+     NAND2_X4                      307
+     NAND3_X1                     5838
+     NAND3_X2                      276
+     NAND3_X4                       32
+     NAND4_X1                      512
+     NAND4_X2                       34
+     NAND4_X4                        3
+     NOR2_X1                      3515
+     NOR2_X2                       705
+     NOR2_X4                       209
+     NOR3_X1                       312
+     NOR3_X2                        53
+     NOR3_X4                         3
+     NOR4_X1                        95
+     NOR4_X2                        15
+     NOR4_X4                        26
+     OAI211_X2                       8
+     OAI21_X1                     2963
+     OAI21_X2                      185
+     OAI21_X4                       14
+     OAI221_X1                      42
+     OAI22_X1                      267
+     OAI22_X2                        6
+     OR2_X1                        719
+     OR2_X2                        121
+     OR2_X4                          8
+     OR3_X1                         36
+     OR3_X2                         10
+     OR4_X1                          2
+     OR4_X2                          3
+     XNOR2_X1                     1593
+     XNOR2_X2                       72
+     XOR2_X1                       168
+     XOR2_X2                        11
+
+   Chip area for module '\hbmpim_compute_16': 46231.066000
+     of which used for sequential elements: 0.000000 (0.00%)
+

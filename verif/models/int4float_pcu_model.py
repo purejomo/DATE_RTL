@@ -1,0 +1,163 @@
+"""Exact integer model of the INT4 x float PCU.
+
+The datapath is fixed point end to end, so the model uses Python integers only:
+activations are decoded to an integer significand and a binary exponent,
+aligned to the block exponent by a right shift, multiplied by the decoded INT4
+weight, summed, and accumulated with 32-bit two's-complement wrap. No host
+floating point is involved anywhere.
+
+Alignment is lossy by construction -- that is what block floating point is --
+so this model defines the architecture's numerics rather than approximating an
+IEEE result. It mirrors `rtl/int4float_align.v` and `rtl/int4float_pe.v`
+statement for statement.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+LANES = 4
+NUM_PES = 16
+ACC_BITS = 32
+ACC_MASK = (1 << ACC_BITS) - 1
+
+
+@dataclass(frozen=True)
+class ActFormat:
+    """A 16-bit floating-point activation format."""
+
+    exp_bits: int
+    mant_bits: int
+    guard: int = 8
+
+    @property
+    def bias(self) -> int:
+        return (1 << (self.exp_bits - 1)) - 1
+
+    @property
+    def exp_max(self) -> int:
+        return (1 << self.exp_bits) - 1
+
+    @property
+    def align_width(self) -> int:
+        """Width of the aligned magnitude, before the sign."""
+        return self.mant_bits + 1 + self.guard
+
+    @property
+    def aligned_width(self) -> int:
+        """Signed width the RTL carries between align and multiply."""
+        return self.mant_bits + self.guard + 2
+
+
+FP16 = ActFormat(exp_bits=5, mant_bits=10)
+BF16 = ActFormat(exp_bits=8, mant_bits=7)
+
+
+def align_activation(fmt: ActFormat, word: int, ref_exp: int) -> tuple[int, bool, bool]:
+    """Return ``(aligned, saturated, invalid)`` for one activation word."""
+    if not 0 <= word <= 0xFFFF:
+        raise ValueError(f"activation outside 16 bits: {word!r}")
+
+    sign = word >> 15
+    exponent = (word >> fmt.mant_bits) & fmt.exp_max
+    fraction = word & ((1 << fmt.mant_bits) - 1)
+
+    is_zero_exp = exponent == 0
+    is_max_exp = exponent == fmt.exp_max
+    is_zero = is_zero_exp and fraction == 0
+
+    if is_max_exp:                      # infinity and NaN decode to zero
+        return 0, False, True
+
+    significand = fraction if is_zero_exp else (1 << fmt.mant_bits) | fraction
+    lsb_exponent = (1 - fmt.bias - fmt.mant_bits) if is_zero_exp \
+        else (exponent - fmt.bias - fmt.mant_bits)
+
+    shift = ref_exp - lsb_exponent
+    saturated = shift < 0 and not is_zero
+    if shift < 0:
+        shift = 0
+
+    if is_zero or shift > fmt.align_width:
+        magnitude = 0
+    else:
+        magnitude = (significand << fmt.guard) >> shift
+
+    return (-magnitude if sign else magnitude), saturated, False
+
+
+def decode_weight(nibble: int, zero_point: int) -> int:
+    """Asymmetric INT4: the stored nibble minus the zero point, in [-15, 15]."""
+    return nibble - zero_point
+
+
+def wrap_signed(value: int, bits: int = ACC_BITS) -> int:
+    value &= (1 << bits) - 1
+    return value - (1 << bits) if value >> (bits - 1) else value
+
+
+class PcuModel:
+    """One independent accumulator per PE, updated a tile at a time."""
+
+    def __init__(self, fmt: ActFormat, num_pes: int = NUM_PES) -> None:
+        self.fmt = fmt
+        self.num_pes = num_pes
+        self.acc = [0] * num_pes
+
+    def reset(self) -> None:
+        self.acc = [0] * self.num_pes
+
+    def transaction(
+        self,
+        activations: list[int],
+        weights: list[list[int]],
+        zero_point: int,
+        ref_exp: int,
+        *,
+        acc_clear: bool,
+        acc_enable: bool,
+    ) -> tuple[list[int], bool, bool]:
+        if len(activations) != LANES:
+            raise ValueError(f"expected {LANES} activations")
+        if len(weights) != self.num_pes:
+            raise ValueError(f"expected {self.num_pes} weight groups")
+
+        aligned = []
+        saturated = False
+        invalid = False
+        for word in activations:
+            value, sat, inv = align_activation(self.fmt, word, ref_exp)
+            aligned.append(value)
+            saturated |= sat
+            invalid |= inv
+
+        for pe in range(self.num_pes):
+            partial = sum(
+                aligned[lane] * decode_weight(weights[pe][lane], zero_point)
+                for lane in range(LANES)
+            )
+            if acc_clear:
+                self.acc[pe] = wrap_signed(partial)
+            elif acc_enable:
+                self.acc[pe] = wrap_signed(self.acc[pe] + partial)
+
+        return list(self.acc), saturated, invalid
+
+
+def reference_exponent(fmt: ActFormat, activations: list[int]) -> int:
+    """Largest LSB exponent among the activations, which is what software sets.
+
+    Zero, infinity and NaN contribute nothing, so a block of only those falls
+    back to the minimum normal exponent.
+    """
+    exponents = []
+    for word in activations:
+        exponent = (word >> fmt.mant_bits) & fmt.exp_max
+        fraction = word & ((1 << fmt.mant_bits) - 1)
+        if exponent == fmt.exp_max:
+            continue
+        if exponent == 0 and fraction == 0:
+            continue
+        exponents.append((1 - fmt.bias - fmt.mant_bits) if exponent == 0
+                         else (exponent - fmt.bias - fmt.mant_bits))
+    return max(exponents) if exponents else (1 - fmt.bias - fmt.mant_bits)
