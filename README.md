@@ -80,15 +80,6 @@ make
 INT4BF16_EXHAUSTIVE=0 PCU_ITERS=300 make   
 ```
 
-| 논문 행 | 테스트 | 규모 |
-|---|---|---|
-| hbm-pim | `fp16_mul`, `fp16_add` | 코너 전수 + 코너×전체 786,432 + 랜덤 |
-| awq-hbm-pim | `int4bf16_mul` | **전수 2,031,616 케이스** |
-| awq-hbm-pim | `int4fp16_mul`, `bf16_add` | 코너 전수 + 랜덤 |
-| awq-p3-llm | `pcu_{fp16,bf16}_{32,64}` | 구성별 랜덤 타일 4,000 |
-| p3llm | `p3llm_decoders` | 4개 디코더 전 코드 전수 |
-| p3llm | `p3llm_compressor`, `p3llm_pe`, `p3llm_pcu` | assertion 켜고 랜덤 타일 10,000 |
-
 ---
 
 ## 6. 결과 요약
