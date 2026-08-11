@@ -65,20 +65,24 @@ VERILOG_SOURCES := $(RTL)/2_awq_hbmpim/bf16_add_lane.v
 endif
 
 # --- PCU tests: full tile through the four-stage pipeline ------------------
-
-PCU_SOURCES := $(RTL)/common/compressor_4to2.sv \
-               $(RTL)/common/int4_asym_decode.v \
-               $(RTL)/3_awq_p3llm/int4float_align.v \
-               $(RTL)/3_awq_p3llm/int4float_pe.v \
-               $(RTL)/3_awq_p3llm/int4float_pcu.v
+#
+# 8-PE 빌드와 16-PE 빌드는 rtl/3_awq_p3llm_8pe, rtl/3_awq_p3llm_16pe 로 나뉘어
+# 있고 각자 int4float_pcu/pe/align 사본을 들고 있다. 따라서 한 번에 한쪽
+# 디렉토리만 컴파일한다. 두 벌을 함께 넣으면 세 모듈이 중복 정의된다.
 
 ifneq ($(filter $(TEST),pcu_fp16_32 pcu_bf16_32 pcu_fp16_64 pcu_bf16_64),)
 MODULE          := test_int4float_pcu
 PCU_FORMAT      := $(if $(findstring bf16,$(TEST)),bf16,fp16)
 PCU_NUM_PES     := $(if $(findstring _32,$(TEST)),8,16)
 PCU_SUFFIX      := $(if $(findstring _32,$(TEST)),pcu32,pcu_top)
+PCU_DIR         := $(RTL)/3_awq_p3llm_$(PCU_NUM_PES)pe
 COCOTB_TOPLEVEL := int4$(PCU_FORMAT)_$(PCU_SUFFIX)
-VERILOG_SOURCES := $(PCU_SOURCES) $(RTL)/3_awq_p3llm/$(COCOTB_TOPLEVEL).v
+VERILOG_SOURCES := $(RTL)/common/compressor_4to2.sv \
+                   $(RTL)/common/int4_asym_decode.v \
+                   $(PCU_DIR)/int4float_align.v \
+                   $(PCU_DIR)/int4float_pe.v \
+                   $(PCU_DIR)/int4float_pcu.v \
+                   $(PCU_DIR)/$(COCOTB_TOPLEVEL).v
 export PCU_FORMAT PCU_NUM_PES
 endif
 

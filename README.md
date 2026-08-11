@@ -23,7 +23,8 @@ DATE_RTL/
 │   ├── common/            여러 설계가 공유하는 모듈
 │   ├── 1_hbmpim/          FP16 SIMD 연산기 (baseline)
 │   ├── 2_awq_hbmpim/      INT4 x float SIMD 연산기
-│   ├── 3_awq_p3llm/       INT4 x float PCU (P3-LLM 조직)
+│   ├── 3_awq_p3llm_8pe/   INT4 x float PCU, 8 PE = 32 multiplier
+│   ├── 3_awq_p3llm_16pe/  INT4 x float PCU, 16 PE = 64 multiplier
 │   └── 4_p3llm/           FP4 x FP8 PCU
 ├── synth/                 합성 · 전력 · 표 생성 스크립트
 ├── verif/                 golden model 및 cocotb 테스트

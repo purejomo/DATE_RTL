@@ -2,8 +2,12 @@
 
 // INT4 weight x 16-bit float activation PCU in P3-LLM's organization.
 //
-// One accepted transaction computes a 1 x 4 x 16 GEMV tile: four activations
-// shared across sixteen processing elements, each PE holding four weights and
+// This is the eight-PE build. The sixteen-PE build is the identical source in
+// rtl/3_awq_p3llm_16pe; the two directories are kept apart so each synthesis
+// row has one unambiguous set of sources. Any fix here must be mirrored there.
+//
+// One accepted transaction computes a 1 x 4 x 8 GEMV tile: four activations
+// shared across eight processing elements, each PE holding four weights and
 // its own accumulator. That is exactly P3-LLM Fig. 6(a); only the operand
 // formats differ, which is what this row of the comparison is for.
 //
@@ -11,13 +15,15 @@
 //          |
 //          +--> shared block-exponent alignment (4 instances)
 //          |
-//          +--> 16 parallel PEs, 4 signed multipliers each = 64 multipliers
+//          +--> 8 parallel PEs, 4 signed multipliers each = 32 multipliers
 //                 each: 4:2 compressor -> CPA -> signed 32-bit accumulator
 //
-// With the default sixteen PEs one 256-bit bank access is exactly the 64
-// four-bit weights consumed per transaction, so the bank interface needs no
-// slicing. NUM_PES is a parameter so the operator count can be swept against
-// the SIMD organization at matched throughput.
+// Eight PEs consume 128 bits of weight per transaction, half of a 256-bit bank
+// access, so unlike the sixteen-PE build this one does not line up with the
+// bank read width. It exists to match the 32-multiplier SIMD configuration at
+// equal multiplier count and equal MAC throughput; the four shared alignment
+// instances do not shrink with NUM_PES, so their cost per MAC is twice that of
+// the sixteen-PE build.
 //
 // Why alignment is shared rather than per lane: P3-LLM shifts each product by
 // the activation's own four-bit exponent inside the PE. Binary16 has a
@@ -32,7 +38,7 @@ module int4float_pcu #(
     parameter integer EXP_W   = 5,   // 5 = binary16, 8 = bfloat16
     parameter integer MANT_W  = 10,  // stored fraction bits
     parameter integer GUARD   = 8,
-    parameter integer NUM_PES = 16   // four multipliers each
+    parameter integer NUM_PES = 8    // four multipliers each
 ) (
     input  wire         clk,
     input  wire         rst_n,

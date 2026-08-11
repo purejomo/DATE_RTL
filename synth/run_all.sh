@@ -34,14 +34,25 @@ SIMD_SOURCES=(
     "${RTL}/2_awq_hbmpim/bf16_add_lane.v"
 )
 
-PCU_SOURCES=(
-    "${RTL}/3_awq_p3llm/int4float_align.v"
-    "${RTL}/3_awq_p3llm/int4float_pe.v"
-    "${RTL}/3_awq_p3llm/int4float_pcu.v"
-    "${RTL}/3_awq_p3llm/int4fp16_pcu32.v"
-    "${RTL}/3_awq_p3llm/int4fp16_pcu_top.v"
-    "${RTL}/3_awq_p3llm/int4bf16_pcu32.v"
-    "${RTL}/3_awq_p3llm/int4bf16_pcu_top.v"
+# The eight-PE and sixteen-PE builds live in separate directories and each
+# carries its own copy of int4float_pcu/pe/align, so the two source sets must
+# never be concatenated: doing so would define those three modules twice.
+PCU8_SOURCES=(
+    "${RTL}/3_awq_p3llm_8pe/int4float_align.v"
+    "${RTL}/3_awq_p3llm_8pe/int4float_pe.v"
+    "${RTL}/3_awq_p3llm_8pe/int4float_pcu.v"
+    "${RTL}/3_awq_p3llm_8pe/int4fp16_pcu32.v"
+    "${RTL}/3_awq_p3llm_8pe/int4bf16_pcu32.v"
+    "${RTL}/common/int4_asym_decode.v"
+    "${RTL}/common/compressor_4to2.sv"
+)
+
+PCU16_SOURCES=(
+    "${RTL}/3_awq_p3llm_16pe/int4float_align.v"
+    "${RTL}/3_awq_p3llm_16pe/int4float_pe.v"
+    "${RTL}/3_awq_p3llm_16pe/int4float_pcu.v"
+    "${RTL}/3_awq_p3llm_16pe/int4fp16_pcu_top.v"
+    "${RTL}/3_awq_p3llm_16pe/int4bf16_pcu_top.v"
     "${RTL}/common/int4_asym_decode.v"
     "${RTL}/common/compressor_4to2.sv"
 )
@@ -67,10 +78,10 @@ ROWS=(
     "int4bf16_compute_32_500 : int4bf16_compute_32  : 2.0 : simd"
     "int4fp16_compute_64_500 : int4fp16_compute_64  : 2.0 : simd"
     "int4bf16_compute_64_500 : int4bf16_compute_64  : 2.0 : simd"
-    "int4fp16_pcu32_500      : int4fp16_pcu32       : 2.0 : pcu"
-    "int4bf16_pcu32_500      : int4bf16_pcu32       : 2.0 : pcu"
-    "int4fp16_pcu_top_pcu500 : int4fp16_pcu_top     : 2.0 : pcu"
-    "int4bf16_pcu_top_pcu500 : int4bf16_pcu_top     : 2.0 : pcu"
+    "int4fp16_pcu32_500      : int4fp16_pcu32       : 2.0 : pcu8"
+    "int4bf16_pcu32_500      : int4bf16_pcu32       : 2.0 : pcu8"
+    "int4fp16_pcu_top_pcu500 : int4fp16_pcu_top     : 2.0 : pcu16"
+    "int4bf16_pcu_top_pcu500 : int4bf16_pcu_top     : 2.0 : pcu16"
     "p3llm_pcu_500           : p3llm_pcu            : 2.0 : p3llm"
 )
 
@@ -79,7 +90,8 @@ field() { echo "$1" | cut -d: -f"$2" | tr -d ' '; }
 sources_for() {
     case "$1" in
         simd)  printf '%s\n' "${SIMD_SOURCES[@]}" ;;
-        pcu)   printf '%s\n' "${PCU_SOURCES[@]}" ;;
+        pcu8)  printf '%s\n' "${PCU8_SOURCES[@]}" ;;
+        pcu16) printf '%s\n' "${PCU16_SOURCES[@]}" ;;
         p3llm) printf '%s\n' "${P3LLM_SOURCES[@]}" ;;
     esac
 }
