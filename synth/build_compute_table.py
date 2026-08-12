@@ -153,7 +153,6 @@ def main() -> None:
             "includes_accumulator": "yes" if has_acc else "no (in GRF)",
             "cells": entry["cells"],
             "dffs": entry["dffs"],
-            "wns_ns": entry["wns_ns"],
         })
 
     path = R / "comparison_compute.csv"
@@ -168,7 +167,7 @@ def main() -> None:
     hdr = (f"{'paper':<9}{'precision':<12}{'organization':<13}{'MHz':>5}"
            f"{'mul':>5}{'add':>5}{'MAC/cy':>7}{'GMAC/s':>8}{'COMPUTE':>10}{'comb':>10}"
            f"{'seq':>9}{'um2/MAC':>9}{'um2/GMACs':>11}{'Power W':>9}"
-           f"{'pJ/MAC':>8}{'WNS':>6}")
+           f"{'pJ/MAC':>8}")
     print(hdr); print("-" * len(hdr))
     for r in rows:
         print(f"{r['paper']:<9}{r['precision']:<12}{r['organization']:<13}"
@@ -177,8 +176,7 @@ def main() -> None:
               f"{r['gmac_per_s']:>8}"
               f"{r['compute_area_um2']:>10}{r['combinational_um2']:>10}"
               f"{r['sequential_um2']:>9}{r['um2_per_mac']:>9}"
-              f"{r['um2_per_gmacs']:>11}{r['power_w']:>9}{r['pj_per_mac']:>8}"
-              f"{r['wns_ns']:>6}")
+              f"{r['um2_per_gmacs']:>11}{r['power_w']:>9}{r['pj_per_mac']:>8}")
 
 
 if __name__ == "__main__":

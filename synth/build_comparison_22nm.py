@@ -2,8 +2,7 @@
 
 All synthesis and power reports consumed here are Nangate45 measurements.  The
 compact output follows the comparison-table convention requested for the
-paper: area and power are projected to 22nm, while ``WNS45`` remains the raw
-45nm timing result.
+paper: area and power are projected to 22nm.
 
     area    / 4.545
     energy  / 2.100
@@ -60,7 +59,6 @@ CSV_FIELDS = (
     "µm²/MAC",
     "Power W",
     "pJ/MAC",
-    "WNS45",
 )
 
 TOTAL_POWER_RE = re.compile(
@@ -89,7 +87,7 @@ def load_area(path: pathlib.Path, required_labels: tuple[str, ...]) -> dict[str,
 
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        required_fields = {"label", "top", "area_um2", "wns_ns"}
+        required_fields = {"label", "top", "area_um2"}
         missing_fields = required_fields - set(reader.fieldnames or ())
         if missing_fields:
             missing = ", ".join(sorted(missing_fields))
@@ -173,7 +171,6 @@ def measured_row(
         raise ValueError(f"{design}: operator counts and throughput must be positive")
     top = (entry.get("top") or "").strip()
     area = finite_float(entry.get("area_um2"), source=area_source, field="area_um2")
-    wns = finite_float(entry.get("wns_ns"), source=area_source, field="wns_ns")
     if area <= 0.0:
         raise ValueError(f"{area_source}: non-positive area for {design}: {area}")
     return {
@@ -184,7 +181,6 @@ def measured_row(
         "mac_per_cycle": float(mac_per_cycle),
         "area45": area,
         "power45": power_of(power_dir, top, netlist),
-        "wns45": wns,
     }
 
 
@@ -244,7 +240,6 @@ def project(row: dict) -> dict[str, str | int]:
         "µm²/MAC": f"{area22 / mac_per_cycle:.0f}",
         "Power W": "" if power22 is None else f"{power22:.4f}",
         "pJ/MAC": "" if pj_per_mac22 is None else f"{pj_per_mac22:.1f}",
-        "WNS45": f"{row['wns45']:.2f}",
     }
 
 

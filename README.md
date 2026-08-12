@@ -13,18 +13,6 @@
 | awq-p3-llm | INT4/FP16, INT4/BF16 | P3-LLM PCU | signed 32b 고정소수점 | `int4{fp,bf}16_pcu32`, `int4{fp,bf}16_pcu_top` |
 | p3llm | FP4/FP8 | P3-LLM PCU | signed 32b 고정소수점 | `p3llm_pcu` |
 
-앞의 네 행은 모두 **누산기를 포함한 경계**에서, **32비트 누산 폭**과 **4단 파이프라인**으로 측정한다.
-SIMD 행은 원래 조합회로 곱셈·덧셈 뱅크였고 누산이 GRF에 있어 측정 경계 밖이었는데,
-그러면 PCU 행만 순차 면적을 부담하게 되어 두 조직을 같은 기준으로 비교할 수 없었다.
-지금은 SIMD 레인마다 binary32 가산기와 32비트 누산 레지스터를 갖는다.
-이 때문에 SIMD 행의 면적은 이전 판보다 크며, 그 증가분이 곧 float 조직에서
-32비트 누산이 치르는 비용이다 — PCU는 같은 자리에서 캐리 전파 덧셈만 하면 된다.
-
-HBM-PIM과 AWQ-HBM-PIM SIMD의 multiplier 및 binary32 accumulator adder는 같은
-비교용 경량 산술 contract를 사용한다. 정상 finite 입력은 RNE로 계산하며
-subnormal 입력은 signed zero로 처리(DAZ), subnormal 결과는 signed zero로
-flush(FTZ)한다. NaN과 infinity 입력은 지원 범위 밖이다.
-
 ---
 
 ## 2. 디렉토리
@@ -64,13 +52,7 @@ python3 build_comparison_22nm.py  # 공통 결과에서 22nm 비교표만 재생
 | Yosys 0.52 | `~/.local/yosys-0.52/usr/bin/yosys` | `YOSYS_EXE` |
 | sv2v 0.0.13 | `~/.local/sv2v-0.0.13/sv2v-Linux/sv2v` | `SV2V_EXE` |
 
-산출물: `build/`(중간), `results/area.csv`, `results/reports/`,
-`results/power/`, `results/comparison_compute.csv`,
-`results/comparison_22nm.csv`.
-모든 설계의 면적·report·power는 같은 `results/` 구조에 저장
-면적만 재합성하여 netlist가 기존 power report보다 새로우면 두 CSV의 해당
-`Power W`와 `pJ/MAC`은 빈 칸으로 표시한다. `./run_all.sh power`를 다시 실행한
-뒤 표를 재생성해야 새 RTL 기준 전력·에너지가 채워진다.
+설계의 면적·report·power는 같은 `results/` 구조에 저장
 
 ---
 
@@ -95,9 +77,9 @@ python3 build_comparison_22nm.py  # 공통 결과에서 22nm 비교표만 재생
 - `add`는 RTL의 `+` 토큰 수가 아니라 **architectural accumulator lane 수**다.
   SIMD는 multiplier당 하나, 8/16-PE P3-LLM PCU는 8/16개다.
 
-**22nm 투영표**
+**22nm**
 - `results/comparison_22nm.csv`의 면적과 power는 Nangate45 합성값을 각각
-  4.545와 1.625로 나눈 투영값이며, `WNS45`는 45nm 측정값 그대로다.
+  4.545와 1.625로 나눈 투영값
 - `pJ/MAC`은 45nm 연산 에너지를 2.100으로 나눈 별도 투영값이다. 이 계수에는
   node speed-up 가정이 포함되므로, 표에 유지한 목표 MHz/GMAC/s와 투영 power만
   다시 나누어 얻는 값과는 일치하지 않는다.

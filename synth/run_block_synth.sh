@@ -65,20 +65,16 @@ for artifact in 1_synth.v 1_synth.sdc; do
 done
 
 stat_file="${OUT_DIR}/reports/${LABEL}/synth_stat.txt"
-rpt_file="${OUT_DIR}/reports/${LABEL}/1_Post_synthesis.rpt"
 area=$(grep -oP "Chip area for module '\\\\${TOP}': \K[0-9.]+" "${stat_file}" | tail -1)
 cells=$(grep -oP 'Number of cells:\s+\K[0-9]+' "${stat_file}" | tail -1)
-dffs=$(grep -cE '^\s+DFF_X' "${stat_file}" || true)
 dff_count=$(awk '/^\s+DFF_X/ {sum += $2} END {print sum+0}' "${stat_file}")
-wns=$(awk '/^wns/ {print $2}' "${rpt_file}" | tail -1)
-tns=$(awk '/^tns/ {print $2}' "${rpt_file}" | tail -1)
 
 csv="${OUT_DIR}/area.csv"
 [[ -f "${csv}" ]] || \
-    echo "label,top,area_um2,cells,dffs,wns_ns,tns_ns,clock_ns" > "${csv}"
+    echo "label,top,area_um2,cells,dffs,clock_ns" > "${csv}"
 grep -v "^${LABEL}," "${csv}" > "${csv}.tmp" 2>/dev/null || true
 mv "${csv}.tmp" "${csv}" 2>/dev/null || true
-echo "${LABEL},${TOP},${area},${cells},${dff_count},${wns},${tns},${CLOCK_PERIOD}" >> "${csv}"
+echo "${LABEL},${TOP},${area},${cells},${dff_count},${CLOCK_PERIOD}" >> "${csv}"
 
-printf '%-28s area=%12s um2  cells=%7s  dff=%5s  wns=%8s  tns=%10s\n' \
-    "${LABEL}" "${area}" "${cells}" "${dff_count}" "${wns}" "${tns}"
+printf '%-28s area=%12s um2  cells=%7s  dff=%5s\n' \
+    "${LABEL}" "${area}" "${cells}" "${dff_count}"
