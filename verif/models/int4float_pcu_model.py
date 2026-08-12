@@ -81,7 +81,17 @@ def align_activation(fmt: ActFormat, word: int, ref_exp: int) -> tuple[int, bool
     if is_zero or shift > fmt.align_width:
         magnitude = 0
     else:
-        magnitude = (significand << fmt.guard) >> shift
+        # Round to nearest, ties to even, on the bits the shift drops. The RTL
+        # used to truncate here, which biased every activation toward zero by
+        # up to one LSB in the same direction, so the error accumulated across a
+        # group instead of cancelling.
+        widened = significand << fmt.guard
+        magnitude = widened >> shift
+        if shift >= 1:
+            guard_bit = (widened >> (shift - 1)) & 1
+            sticky = bool(widened & ((1 << (shift - 1)) - 1)) if shift >= 2 else False
+            if guard_bit and (sticky or (magnitude & 1)):
+                magnitude += 1
 
     return (-magnitude if sign else magnitude), saturated, False
 
@@ -94,6 +104,17 @@ def decode_weight(nibble: int, zero_point: int) -> int:
 def wrap_signed(value: int, bits: int = ACC_BITS) -> int:
     value &= (1 << bits) - 1
     return value - (1 << bits) if value >> (bits - 1) else value
+
+
+def saturate_signed(value: int, bits: int = ACC_BITS) -> int:
+    """Clamp to the signed range instead of wrapping.
+
+    The accumulators used to wrap, which turned an overflow into a sign flip
+    with nothing in silicon able to report it. Both PE designs now saturate.
+    """
+    high = (1 << (bits - 1)) - 1
+    low = -(1 << (bits - 1))
+    return high if value > high else (low if value < low else value)
 
 
 class PcuModel:
@@ -137,9 +158,11 @@ class PcuModel:
                 for lane in range(LANES)
             )
             if acc_clear:
+                # A cleared accumulator takes the sign-extended 28-bit partial,
+                # which cannot exceed 32 bits, so no clamping applies here.
                 self.acc[pe] = wrap_signed(partial)
             elif acc_enable:
-                self.acc[pe] = wrap_signed(self.acc[pe] + partial)
+                self.acc[pe] = saturate_signed(self.acc[pe] + partial)
 
         return list(self.acc), saturated, invalid
 

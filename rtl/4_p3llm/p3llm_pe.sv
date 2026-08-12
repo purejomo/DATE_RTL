@@ -286,7 +286,8 @@ module p3llm_pe (
   logic signed [32'd27:32'd0] partial_sum_comb;
   logic signed [32'd31:32'd0] partial_sum_32_comb;
   logic signed [32'd32:32'd0] accumulator_add_comb;
-  logic               unused_accumulator_overflow;
+  logic signed [32'd31:32'd0] accumulator_next_comb;
+  logic                       accumulator_overflow;
 
   always_comb begin
     partial_sum_comb    = s2_sum_q + s2_carry_q;
@@ -298,8 +299,18 @@ module p3llm_pe (
         partial_sum_32_comb[32'd31],
         partial_sum_32_comb
       });
-    unused_accumulator_overflow =
+    accumulator_overflow =
       accumulator_add_comb[32'd32] ^ accumulator_add_comb[32'd31];
+    // The 33-bit sum was previously truncated back to 32 bits, so an overflow
+    // wrapped and flipped the sign with nothing in silicon to detect it. It now
+    // saturates, which bounds the error instead of inverting the result.
+    if (accumulator_overflow) begin
+      accumulator_next_comb = accumulator_add_comb[32'd32]
+        ? {1'b1, {32'd31{1'b0}}}
+        : {1'b0, {32'd31{1'b1}}};
+    end else begin
+      accumulator_next_comb = accumulator_add_comb[32'd31:32'd0];
+    end
   end
 
   always_ff @(posedge clk) begin
@@ -312,14 +323,14 @@ module p3llm_pe (
         if (s2_acc_clear_q) begin
           acc_out_o <= partial_sum_32_comb;
         end else if (s2_acc_enable_q) begin
-          acc_out_o <= accumulator_add_comb[32'd31:32'd0];
+          acc_out_o <= accumulator_next_comb;
         end
       end
 
 `ifdef P3LLM_ASSERTIONS
 `ifndef SYNTHESIS
       if (s2_valid_q && !s2_acc_clear_q && s2_acc_enable_q) begin
-        assert (!unused_accumulator_overflow)
+        assert (!accumulator_overflow)
           else $error("p3llm_pe: signed 32-bit accumulator overflow");
       end
 `endif

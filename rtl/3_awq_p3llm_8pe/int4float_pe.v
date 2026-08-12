@@ -24,7 +24,7 @@
 //   2  4:2 carry-save reduction
 //   3  final CPA and accumulate
 //
-// The accumulator wraps on overflow, as P3-LLM's does. Its least significant
+// The accumulator saturates on overflow, as P3-LLM's now does. Its least significant
 // bit is worth 2^(ref_exp - GUARD); software applies that scale, along with
 // the weight group's quantization scale, outside this core.
 module int4float_pe #(
@@ -127,6 +127,19 @@ module int4float_pe #(
     wire signed [27:0] partial_sum = s2_sum_q + s2_carry_q;
     wire signed [31:0] partial_sum_32 = {{4{partial_sum[27]}}, partial_sum};
 
+    // Saturating accumulate. The previous version truncated a 33-bit sum back
+    // to 32 bits, so an overflow wrapped and flipped the sign with nothing in
+    // silicon able to detect it. Saturation bounds the error instead. It
+    // matters because the headroom is finite: with binary16 activations and
+    // GUARD=8 the worst case reaches 2^31 after 68 transactions, which a group
+    // size above 256 can exceed.
+    wire signed [32:0] acc_wide =
+        {acc_q[31], acc_q} + {partial_sum_32[31], partial_sum_32};
+    wire acc_overflow = acc_wide[32] ^ acc_wide[31];
+    wire signed [31:0] acc_next =
+        acc_overflow ? (acc_wide[32] ? 32'sh80000000 : 32'sh7fffffff)
+                     : acc_wide[31:0];
+
     integer index;
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -178,7 +191,7 @@ module int4float_pe #(
                 if (s2_clear_q) begin
                     acc_q <= partial_sum_32;
                 end else if (s2_enable_q) begin
-                    acc_q <= acc_q + partial_sum_32;
+                    acc_q <= acc_next;
                 end
             end
         end

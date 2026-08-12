@@ -84,9 +84,31 @@ module int4float_align #(
     wire [31:0] shift_amount = shift_negative ? 32'd0 : shift_magnitude;
 
     wire [ALIGN_W-1:0] widened = {significand, {GUARD{1'b0}}};
+    wire [ALIGN_W-1:0] shifted = widened >> shift_amount;
+
+    // Round to nearest, ties to even, on the bits the alignment shift drops.
+    // Truncating here would bias every activation toward zero by up to one LSB,
+    // and the bias is systematic rather than random, so it accumulates: over a
+    // 128-element group it reaches tens of LSBs in one direction. The
+    // multiplier lanes this design is compared against round, so truncating
+    // would also make the two organizations numerically inequivalent.
+    wire [ALIGN_W-1:0] guard_mask =
+        (shift_amount == 32'd0)
+            ? {ALIGN_W{1'b0}}
+            : ({{(ALIGN_W-1){1'b0}}, 1'b1} << (shift_amount - 32'd1));
+    wire [ALIGN_W-1:0] sticky_mask =
+        (shift_amount < 32'd2)
+            ? {ALIGN_W{1'b0}}
+            : (guard_mask - {{(ALIGN_W-1){1'b0}}, 1'b1});
+    wire guard_bit  = |(widened & guard_mask);
+    wire sticky_bit = |(widened & sticky_mask);
+    wire round_up   = guard_bit && (sticky_bit || shifted[0]);
+
+    wire [ALIGN_W-1:0] rounded = shifted + {{(ALIGN_W-1){1'b0}}, round_up};
+
     wire [ALIGN_W-1:0] magnitude =
         (is_zero || is_max_exp || flush) ? {ALIGN_W{1'b0}}
-                                        : (widened >> shift_amount);
+                                        : rounded;
 
     assign o_aligned = sign ? -$signed({1'b0, magnitude})
                             :  $signed({1'b0, magnitude});

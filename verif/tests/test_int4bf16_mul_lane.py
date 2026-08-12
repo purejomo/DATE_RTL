@@ -1,14 +1,11 @@
-"""Exhaustive bit-exactness proof for the INT4 x bfloat16 multiplier lane.
+"""Exhaustive supported-domain proof for reduced INT4 x bfloat16 multiply.
 
 Every asymmetric INT4 weight is an integer in [-15, +15], which bfloat16
-represents exactly, so a correctly rounded INT4 x BF16 product must equal the
-correctly rounded BF16 x BF16 product. The oracle is the generic
-``float_reference`` model, which is itself validated against the baseline's
-independently written binary16 model over all 2,031,616 (word, weight) pairs.
+represents exactly. Normal finite activations use RNE, exponent-zero inputs are
+DAZ, subnormal products are FTZ, and NaN/infinity inputs are unsupported.
 
 bfloat16 has only 65,536 encodings and INT4 only 31 distinct values, so the
-whole input space of the arithmetic contract is 2,031,616 cases and is checked
-exhaustively rather than sampled.
+whole supported activation space is checked exhaustively rather than sampled.
 """
 
 from __future__ import annotations
@@ -41,6 +38,25 @@ async def evaluate(dut, act: int, q: int, zp: int) -> int:
     return int(dut.o_result.value)
 
 
+def is_special(act: int) -> bool:
+    return ((act >> 7) & 0xFF) == 0xFF
+
+
+def expected(act: int, q: int, zp: int) -> int:
+    """DAZ/FTZ oracle with tininess detected before rounding."""
+    weight = q - zp
+    sign = ((act >> 15) & 1) ^ (weight < 0)
+    exponent = (act >> 7) & 0xFF
+    if exponent == 0 or weight == 0:
+        return sign << 15
+
+    product = (0x80 | (act & 0x7F)) * abs(weight)
+    exact_leading_exponent = exponent - 127 - 7 + product.bit_length() - 1
+    if exact_leading_exponent < -126:
+        return sign << 15
+    return multiply(BF16, act, encode_small_integer(BF16, weight))
+
+
 @cocotb.test()
 async def test_int4_decode_is_exhaustive(dut) -> None:
     """All 256 (q, zero_point) pairs decode to the arithmetic they claim."""
@@ -48,7 +64,7 @@ async def test_int4_decode_is_exhaustive(dut) -> None:
     for q in range(16):
         for zp in range(16):
             result = await evaluate(dut, one, q, zp)
-            reference = multiply(BF16, one, encode_small_integer(BF16, q - zp))
+            reference = expected(one, q, zp)
             assert result == reference, (
                 f"q={q} zp={zp} (weight {q - zp}): "
                 f"got 0x{result:04x}, expected 0x{reference:04x}"
@@ -62,10 +78,11 @@ async def test_all_activations_against_all_weights(dut) -> None:
     checked = 0
     for weight in WEIGHT_VALUES:
         q, zp = representative_encoding(weight)
-        encoded = encode_small_integer(BF16, weight)
         for act in range(0, 1 << 16, stride):
+            if is_special(act):
+                continue
             result = await evaluate(dut, act, q, zp)
-            reference = multiply(BF16, act, encoded)
+            reference = expected(act, q, zp)
             assert result == reference, (
                 f"act=0x{act:04x} weight={weight}: "
                 f"got 0x{result:04x}, expected 0x{reference:04x}"

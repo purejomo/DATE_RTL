@@ -36,6 +36,20 @@ def wrap_signed(value: int, width: int) -> int:
     return wrapped - (1 << width) if wrapped & sign else wrapped
 
 
+def saturate_signed(value: int, width: int) -> int:
+    """Clamp ``value`` to the signed range rather than wrapping.
+
+    The shifter and the accumulator used to drop the bits that overflowed and
+    report it only through a simulation assertion, which costs nothing in
+    silicon. Both now saturate, so an out-of-range value degrades instead of
+    changing sign.
+    """
+
+    high = (1 << (width - 1)) - 1
+    low = -(1 << (width - 1))
+    return high if value > high else (low if value < low else value)
+
+
 def decode_fp8_e4m3(code: int) -> DecodedFP8:
     """Decode OCP E4M3FN into the common signed six-bit mantissa."""
 

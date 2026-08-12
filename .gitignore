@@ -1,6 +1,9 @@
 # --- 합성 / 시뮬레이션 산출물 -------------------------------------------
 
 build/
+obj_dir/
+verif/fp32/obj_arith/
+verif/fp32/obj_mac/
 *.vcd
 *.fst
 *.vvp
@@ -22,4 +25,3 @@ venv/
 # 이 파일이 리포 루트에 있으므로 경로는 루트 기준이다. DATE_RTL/ 접두사를
 # 붙이면 <repo>/DATE_RTL/... 을 찾게 되어 아무것도 매칭하지 않는다.
 paper/
-rtl/5_rabit/

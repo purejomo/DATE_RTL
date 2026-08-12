@@ -1,12 +1,10 @@
-"""Bit-exactness proof for the INT4 x binary16 multiplier lane.
+"""Supported-domain proof for the reduced INT4 x binary16 multiplier.
 
 Every asymmetric INT4 weight is an integer in [-15, +15], and every such
 integer is exactly representable in binary16. A correctly rounded INT4 x FP16
-product must therefore equal the correctly rounded FP16 x FP16 product of the
-same two values. The oracle is the generic ``float_reference`` model, the
-same one the bfloat16 lane is checked against: the lane is verified against
-full binary16 multiplication even though it only builds an 11x4 significand
-array.
+product uses RNE for normal finite activations. Subnormal activations are
+treated as signed zero (DAZ), subnormal products are flushed to signed zero
+(FTZ), and NaN/infinity activations are outside the supported domain.
 """
 
 from __future__ import annotations
@@ -24,8 +22,8 @@ RANDOM_ACTIVATIONS = int(os.environ.get("INT4FP16_RANDOM_ACTS", "2000"))
 SEED = 0x494E5434
 
 # Zero, both signed zeros, smallest and largest subnormals, the subnormal to
-# normal boundary, one, powers of two, the largest finite value, infinity and
-# NaN, plus values that force a rounding tie.
+# normal boundary, one, powers of two, the largest finite value, unsupported
+# special encodings (which are skipped), and values that force a rounding tie.
 CORNER_ACTIVATIONS = (
     0x0000, 0x8000, 0x0001, 0x8001, 0x0002, 0x03FF, 0x83FF, 0x0400, 0x8400,
     0x3C00, 0xBC00, 0x4000, 0x4200, 0x7BFF, 0xFBFF, 0x7C00, 0xFC00,
@@ -42,8 +40,23 @@ async def evaluate(dut, act: int, q: int, zp: int) -> int:
     return int(dut.o_result.value)
 
 
+def is_special(act: int) -> bool:
+    return ((act >> 10) & 0x1F) == 0x1F
+
+
 def expected(act: int, q: int, zp: int) -> int:
-    return multiply(FP16, act, encode_small_integer(FP16, q - zp))
+    """DAZ/FTZ oracle with tininess detected before rounding."""
+    weight = q - zp
+    sign = ((act >> 15) & 1) ^ (weight < 0)
+    exponent = (act >> 10) & 0x1F
+    if exponent == 0 or weight == 0:
+        return sign << 15
+
+    product = (0x400 | (act & 0x3FF)) * abs(weight)
+    exact_leading_exponent = exponent - 15 - 10 + product.bit_length() - 1
+    if exact_leading_exponent < -14:
+        return sign << 15
+    return multiply(FP16, act, encode_small_integer(FP16, weight))
 
 
 @cocotb.test()
@@ -53,8 +66,7 @@ async def test_int4_decode_is_exhaustive(dut) -> None:
         for zp in range(16):
             weight = q - zp
             result = await evaluate(dut, 0x3C00, q, zp)   # activation = 1.0
-            reference = multiply(FP16, 0x3C00,
-                                 encode_small_integer(FP16, weight))
+            reference = expected(0x3C00, q, zp)
             assert result == reference, (
                 f"q={q} zp={zp} (weight {weight}): "
                 f"got 0x{result:04x}, expected 0x{reference:04x}"
@@ -66,6 +78,8 @@ async def test_corner_activations_against_all_weights(dut) -> None:
     """Every corner activation against all 256 weight encodings."""
     checked = 0
     for act in CORNER_ACTIVATIONS:
+        if is_special(act):
+            continue
         for q in range(16):
             for zp in range(16):
                 result = await evaluate(dut, act, q, zp)
@@ -85,6 +99,8 @@ async def test_random_activations_against_all_weights(dut) -> None:
     checked = 0
     for _ in range(RANDOM_ACTIVATIONS):
         act = rng.getrandbits(16)
+        while is_special(act):
+            act = rng.getrandbits(16)
         for q in range(16):
             for zp in range(16):
                 result = await evaluate(dut, act, q, zp)

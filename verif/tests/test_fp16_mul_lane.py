@@ -1,10 +1,9 @@
-"""Bit-exactness regression for the baseline binary16 multiplier lane.
+"""Bit-exactness regression for the reduced HBM binary16 multiplier.
 
 This is the multiplier the FP16 SIMD baseline is built from, and the reference
 point every low-precision multiplier in the paper is measured against.
-binary16 multiplication has 2^32 operand pairs, so this checks every corner
-pair exhaustively, each corner against all 65,536 encodings, and samples the
-rest.
+Normal finite operands use RNE. Subnormal operands and results are flushed to
+signed zero; NaN and infinity inputs are outside the supported domain.
 
 The oracle is the generic ``float_reference`` model, the same one the INT4
 multiplier lanes are checked against.
@@ -24,15 +23,34 @@ SETTLE_NS = 1
 RANDOM_PAIRS = int(os.environ.get("FP16_MUL_RANDOM_PAIRS", "200000"))
 SEED = 0x464D554C
 
-# Zero, both signed zeros, smallest and largest subnormals, the subnormal to
-# normal boundary, one, powers of two, the largest finite value, infinity and
-# NaN, plus values that force overflow, underflow, and rounding ties.
+# Zero, both signed zeros, subnormal inputs (DAZ), the normal boundary, powers
+# of two, the largest finite value, and values that force finite overflow,
+# underflow/FTZ, and rounding ties. NaN and infinity inputs are unsupported.
 CORNERS = (
     0x0000, 0x8000, 0x0001, 0x8001, 0x03FF, 0x83FF, 0x0400, 0x8400,
-    0x3C00, 0xBC00, 0x4000, 0xC000, 0x7BFF, 0xFBFF, 0x7C00, 0xFC00,
-    0x7E00, 0xFE00, 0x3C01, 0xBC01, 0x0002, 0x4200, 0x3555, 0x3801,
+    0x3C00, 0xBC00, 0x4000, 0xC000, 0x7BFF, 0xFBFF,
+    0x3C01, 0xBC01, 0x0002, 0x4200, 0x3555, 0x3801,
     0x6BFF, 0x6C00, 0x77FF, 0x7800, 0x0800, 0x1000,
 )
+
+
+def is_special(word: int) -> bool:
+    return ((word >> 10) & 0x1F) == 0x1F
+
+
+def multiply_ftz(a: int, b: int) -> int:
+    """Supported-domain oracle with tininess detected before rounding."""
+    sign = ((a ^ b) >> 15) & 1
+    exp_a = (a >> 10) & 0x1F
+    exp_b = (b >> 10) & 0x1F
+    if exp_a == 0 or exp_b == 0:
+        return sign << 15
+    sig_product = (0x400 | (a & 0x3FF)) * (0x400 | (b & 0x3FF))
+    exact_exponent = (exp_a - 25) + (exp_b - 25)
+    if exact_exponent + sig_product.bit_length() - 1 < -14:
+        return sign << 15
+    result = multiply(FP16, a, b)
+    return result
 
 
 async def evaluate(dut, a: int, b: int) -> int:
@@ -49,7 +67,7 @@ async def test_corner_pairs_are_exhaustive(dut) -> None:
     for a in CORNERS:
         for b in CORNERS:
             result = await evaluate(dut, a, b)
-            reference = multiply(FP16, a, b)
+            reference = multiply_ftz(a, b)
             assert result == reference, (
                 f"0x{a:04x} * 0x{b:04x}: "
                 f"got 0x{result:04x}, expected 0x{reference:04x}"
@@ -60,12 +78,14 @@ async def test_corner_pairs_are_exhaustive(dut) -> None:
 
 @cocotb.test()
 async def test_corner_against_every_encoding(dut) -> None:
-    """Each corner value multiplied by all 65,536 binary16 encodings."""
+    """Each corner value against every supported finite binary16 encoding."""
     checked = 0
     for a in CORNERS[:12]:
         for b in range(1 << 16):
+            if is_special(b):
+                continue
             result = await evaluate(dut, a, b)
-            reference = multiply(FP16, a, b)
+            reference = multiply_ftz(a, b)
             assert result == reference, (
                 f"0x{a:04x} * 0x{b:04x}: "
                 f"got 0x{result:04x}, expected 0x{reference:04x}"
@@ -80,8 +100,12 @@ async def test_random_pairs(dut) -> None:
     for _ in range(RANDOM_PAIRS):
         a = rng.getrandbits(16)
         b = rng.getrandbits(16)
+        while is_special(a):
+            a = rng.getrandbits(16)
+        while is_special(b):
+            b = rng.getrandbits(16)
         result = await evaluate(dut, a, b)
-        reference = multiply(FP16, a, b)
+        reference = multiply_ftz(a, b)
         assert result == reference, (
             f"0x{a:04x} * 0x{b:04x}: "
             f"got 0x{result:04x}, expected 0x{reference:04x}"

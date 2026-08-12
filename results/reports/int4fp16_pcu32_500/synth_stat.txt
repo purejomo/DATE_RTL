@@ -3,8 +3,8 @@
 
 === int4fp16_pcu32 ===
 
-   Number of wires:              39709
-   Number of wire bits:          40166
+   Number of wires:              39652
+   Number of wire bits:          40109
    Number of public wires:        1479
    Number of public wire bits:    1936
    Number of ports:                 14
@@ -12,72 +12,61 @@
    Number of memories:               0
    Number of memory bits:            0
    Number of processes:              0
-   Number of cells:              38233
-     AND2_X1                       723
-     AND2_X2                       160
+   Number of cells:              38176
+     AND2_X1                      1045
+     AND2_X2                        10
      AND2_X4                         2
-     AND3_X1                        82
-     AND3_X2                         7
-     AND3_X4                         2
-     AND4_X1                         6
-     AND4_X2                         1
-     AOI21_X1                     2849
-     AOI21_X2                      428
-     AOI21_X4                       17
-     AOI22_X1                       54
-     AOI22_X2                       11
-     BUF_X1                        337
-     BUF_X16                        36
-     BUF_X2                        277
-     BUF_X4                        332
-     BUF_X8                        188
-     CLKBUF_X1                      88
-     CLKBUF_X2                      13
+     AND3_X1                       130
+     AND4_X1                         3
+     AOI21_X1                     2812
+     AOI21_X2                       21
+     AOI21_X4                        8
+     AOI22_X1                       42
+     BUF_X1                        787
+     BUF_X2                        299
+     BUF_X4                        145
+     BUF_X8                          9
+     CLKBUF_X1                     122
+     CLKBUF_X2                       4
      CLKBUF_X3                       3
      DFF_X1                       1722
-     INV_X1                       5910
-     INV_X2                        263
-     INV_X4                         72
-     INV_X8                          9
-     NAND2_X1                     7241
-     NAND2_X2                      652
-     NAND2_X4                       95
-     NAND3_X1                     1377
-     NAND3_X2                       63
-     NAND3_X4                        4
-     NAND4_X1                      570
-     NAND4_X2                       77
-     NAND4_X4                       18
-     NOR2_X1                      3269
-     NOR2_X2                       528
-     NOR2_X4                        75
-     NOR3_X1                       130
-     NOR3_X2                        39
-     NOR3_X4                         1
-     NOR4_X1                        34
-     NOR4_X2                        13
-     NOR4_X4                         6
-     OAI211_X4                       4
-     OAI21_X1                     3077
-     OAI21_X2                      153
-     OAI21_X4                       18
-     OAI221_X1                      96
-     OAI22_X1                      555
-     OAI22_X2                       78
-     OAI22_X4                       20
-     OR2_X1                       1916
-     OR2_X2                        208
-     OR2_X4                         15
-     OR3_X1                         15
-     OR3_X2                         13
-     OR3_X4                          6
-     OR4_X1                          2
-     OR4_X2                          2
-     XNOR2_X1                     3359
-     XNOR2_X2                      828
-     XOR2_X1                        75
-     XOR2_X2                         9
+     INV_X1                       6070
+     INV_X2                         55
+     INV_X4                         12
+     MUX2_X1                         2
+     NAND2_X1                     8545
+     NAND2_X2                      111
+     NAND2_X4                       33
+     NAND3_X1                     1872
+     NAND3_X2                       44
+     NAND3_X4                        9
+     NAND4_X1                      477
+     NAND4_X2                        7
+     NAND4_X4                        2
+     NOR2_X1                      3010
+     NOR2_X2                        83
+     NOR2_X4                        31
+     NOR3_X1                       168
+     NOR3_X2                         5
+     NOR4_X1                       220
+     OAI211_X2                       1
+     OAI211_X4                       1
+     OAI21_X1                     3280
+     OAI21_X2                       33
+     OAI21_X4                        4
+     OAI221_X1                     110
+     OAI22_X1                      643
+     OAI22_X2                        1
+     OR2_X1                       2055
+     OR2_X2                          7
+     OR2_X4                          1
+     OR3_X1                         16
+     OR3_X2                          1
+     OR4_X1                          3
+     XNOR2_X1                     3966
+     XNOR2_X2                        4
+     XOR2_X1                       130
 
-   Chip area for module '\int4fp16_pcu32': 46763.864000
-     of which used for sequential elements: 7786.884000 (16.65%)
+   Chip area for module '\int4fp16_pcu32': 43112.216000
+     of which used for sequential elements: 7786.884000 (18.06%)
 

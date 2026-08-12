@@ -3,7 +3,16 @@ current_design $::env(DESIGN_NAME)
 set clk_name core_clock
 set clk_period $::env(CLOCK_PERIOD)
 set clk_io_fraction 0.20
+# Accept either spelling of the clock port. Without this a design whose clock
+# is not literally named "clk" falls through to the virtual-clock branch below,
+# its flip-flops end up in no clock domain at all, and the run reports a
+# meaningless WNS of zero because none of its sequential paths were
+# constrained. No existing row has a port named pim_clk, so their results are
+# unaffected.
 set clk_port [get_ports -quiet clk]
+if {[llength $clk_port] == 0} {
+    set clk_port [get_ports -quiet pim_clk]
+}
 
 # A virtual clock keeps the same input/output timing budget for combinational
 # lane wrappers that intentionally have no clock port.

@@ -1,80 +1,88 @@
 
 19. Printing statistics.
 
-=== int4bf16_compute_64 ===
+=== awq_int4bf16_pcu_64_lane ===
 
-   Number of wires:             119270
-   Number of wire bits:         124643
-   Number of public wires:           7
-   Number of public wire bits:    5380
-   Number of ports:                  7
-   Number of port bits:           5380
+   Number of wires:             180497
+   Number of wire bits:         183825
+   Number of public wires:        3351
+   Number of public wire bits:    6679
+   Number of ports:                 10
+   Number of port bits:           3338
    Number of memories:               0
    Number of memory bits:            0
    Number of processes:              0
-   Number of cells:             121311
-     AND2_X1                      1215
-     AND2_X2                       140
-     AND2_X4                        10
-     AND3_X1                       360
-     AND3_X2                        15
+   Number of cells:             177146
+     AND2_X1                      1710
+     AND2_X2                       173
+     AND2_X4                        36
+     AND3_X1                       220
+     AND3_X2                        19
      AND3_X4                         2
-     AND4_X1                        62
-     AOI21_X1                     3710
-     AOI21_X2                      337
-     AOI21_X4                       38
-     AOI22_X1                      327
-     AOI22_X2                        3
-     BUF_X1                       1014
-     BUF_X16                        29
-     BUF_X2                        453
-     BUF_X32                         5
-     BUF_X4                        533
-     BUF_X8                        148
-     CLKBUF_X1                      24
-     CLKBUF_X2                      14
-     CLKBUF_X3                      25
-     INV_X1                      20114
-     INV_X16                         1
-     INV_X2                       1016
-     INV_X4                        263
-     INV_X8                         16
-     MUX2_X1                        76
-     NAND2_X1                    37596
-     NAND2_X2                     2878
-     NAND2_X4                      852
-     NAND3_X1                    14048
-     NAND3_X2                      450
-     NAND3_X4                       58
-     NAND4_X1                     2458
-     NAND4_X2                       40
-     NAND4_X4                        6
-     NOR2_X1                     12814
-     NOR2_X2                      1818
-     NOR2_X4                       393
-     NOR3_X1                       921
-     NOR3_X2                       113
-     NOR3_X4                        22
-     NOR4_X1                       415
-     NOR4_X2                         7
-     OAI211_X2                      68
-     OAI21_X1                     8023
-     OAI21_X2                      342
-     OAI21_X4                       23
-     OAI221_X1                     427
-     OAI22_X1                      984
-     OAI22_X2                        6
-     OR2_X1                       1394
-     OR2_X2                         93
-     OR2_X4                         18
-     OR3_X1                        143
-     OR3_X2                          4
-     OR4_X1                        101
-     XNOR2_X1                     4167
-     XNOR2_X2                      250
-     XOR2_X1                       366
-     XOR2_X2                        63
+     AND4_X1                        39
+     AND4_X2                         3
+     AND4_X4                         1
+     AOI21_X1                     8798
+     AOI21_X2                      711
+     AOI21_X4                       52
+     AOI22_X1                     1003
+     AOI22_X2                       10
+     BUF_X1                       1757
+     BUF_X16                        83
+     BUF_X2                       1140
+     BUF_X32                         3
+     BUF_X4                       1839
+     BUF_X8                        508
+     CLKBUF_X1                     339
+     CLKBUF_X2                      61
+     CLKBUF_X3                      79
+     DFF_X1                       5390
+     INV_X1                      29583
+     INV_X2                        847
+     INV_X4                        287
+     INV_X8                         41
+     MUX2_X1                       625
+     MUX2_X2                         6
+     NAND2_X1                    53758
+     NAND2_X2                     3355
+     NAND2_X4                     1283
+     NAND3_X1                    15295
+     NAND3_X2                      780
+     NAND3_X4                      132
+     NAND4_X1                     1516
+     NAND4_X2                       77
+     NAND4_X4                       18
+     NOR2_X1                     14586
+     NOR2_X2                      1977
+     NOR2_X4                       638
+     NOR3_X1                      1368
+     NOR3_X2                        92
+     NOR3_X4                        16
+     NOR4_X1                       333
+     NOR4_X2                        51
+     NOR4_X4                         5
+     OAI211_X2                       4
+     OAI21_X1                    12867
+     OAI21_X2                      677
+     OAI21_X4                      101
+     OAI221_X1                     710
+     OAI221_X2                      16
+     OAI22_X1                      814
+     OAI22_X2                        2
+     OAI22_X4                        1
+     OR2_X1                       2603
+     OR2_X2                        167
+     OR2_X4                         40
+     OR3_X1                        193
+     OR3_X2                         10
+     OR3_X4                          3
+     OR4_X1                         30
+     OR4_X2                          1
+     XNOR2_X1                     7411
+     XNOR2_X2                      316
+     XOR2_X1                       514
+     XOR2_X2                        21
 
-   Chip area for module '\int4bf16_compute_64': 114577.106000
-     of which used for sequential elements: 0.000000 (0.00%)
+   Chip area for module '\awq_int4bf16_pcu_64_lane': 189544.950000
+     of which used for sequential elements: 24373.580000 (12.86%)
 

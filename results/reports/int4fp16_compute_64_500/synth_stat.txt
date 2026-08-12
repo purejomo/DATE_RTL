@@ -1,85 +1,89 @@
 
 19. Printing statistics.
 
-=== int4fp16_compute_64 ===
+=== awq_int4fp16_pcu_64_lane ===
 
-   Number of wires:             148523
-   Number of wire bits:         153896
-   Number of public wires:           7
-   Number of public wire bits:    5380
-   Number of ports:                  7
-   Number of port bits:           5380
+   Number of wires:             189770
+   Number of wire bits:         193098
+   Number of public wires:        3415
+   Number of public wire bits:    6743
+   Number of ports:                 10
+   Number of port bits:           3338
    Number of memories:               0
    Number of memory bits:            0
    Number of processes:              0
-   Number of cells:             150564
-     AND2_X1                      1312
-     AND2_X2                       241
-     AND2_X4                        55
-     AND3_X1                       384
-     AND3_X2                        33
-     AND3_X4                        12
-     AND4_X1                        82
-     AOI21_X1                     4768
-     AOI21_X2                      387
-     AOI21_X4                       73
-     AOI22_X1                      437
-     AOI22_X2                        9
-     BUF_X1                       1355
-     BUF_X16                        12
-     BUF_X2                        577
-     BUF_X32                         3
-     BUF_X4                        964
-     BUF_X8                        163
-     CLKBUF_X1                       5
-     CLKBUF_X2                      78
-     CLKBUF_X3                      51
-     INV_X1                      24914
-     INV_X16                         1
-     INV_X2                       1323
-     INV_X4                        405
-     INV_X8                         31
-     MUX2_X1                       107
-     MUX2_X2                         1
-     NAND2_X1                    53661
-     NAND2_X2                     4434
-     NAND2_X4                     1589
-     NAND3_X1                    16707
-     NAND3_X2                     1138
-     NAND3_X4                      134
-     NAND4_X1                     1590
-     NAND4_X2                       37
-     NAND4_X4                        3
-     NOR2_X1                     11549
-     NOR2_X2                      2628
-     NOR2_X4                       918
-     NOR3_X1                      1042
-     NOR3_X2                       111
-     NOR3_X4                        10
-     NOR4_X1                       281
-     NOR4_X2                        30
-     NOR4_X4                        32
-     OAI211_X2                      89
-     OAI21_X1                     9504
-     OAI21_X2                      573
-     OAI21_X4                       56
-     OAI221_X1                     543
-     OAI22_X1                      809
-     OAI22_X2                       20
-     OAI22_X4                        2
-     OR2_X1                       1237
-     OR2_X2                        187
-     OR2_X4                         33
-     OR3_X1                         97
-     OR3_X2                          7
-     OR3_X4                          1
-     OR4_X1                         28
-     OR4_X2                          2
-     XNOR2_X1                     3031
-     XNOR2_X2                      306
-     XOR2_X1                       325
-     XOR2_X2                        37
+   Number of cells:             186355
+     AND2_X1                      2307
+     AND2_X2                       247
+     AND2_X4                        66
+     AND3_X1                       276
+     AND3_X2                        24
+     AND3_X4                         9
+     AND4_X1                        56
+     AND4_X2                         4
+     AND4_X4                         1
+     AOI21_X1                     9139
+     AOI21_X2                     1052
+     AOI21_X4                       51
+     AOI22_X1                      992
+     AOI22_X2                       18
+     BUF_X1                       1770
+     BUF_X16                        58
+     BUF_X2                       1125
+     BUF_X32                         1
+     BUF_X4                       2324
+     BUF_X8                        491
+     CLKBUF_X1                     296
+     CLKBUF_X2                      70
+     CLKBUF_X3                      57
+     DFF_X1                       5454
+     INV_X1                      30977
+     INV_X16                         3
+     INV_X2                        977
+     INV_X4                        403
+     INV_X8                         51
+     MUX2_X1                       563
+     MUX2_X2                         5
+     NAND2_X1                    56849
+     NAND2_X2                     3224
+     NAND2_X4                     1310
+     NAND3_X1                    15257
+     NAND3_X2                      671
+     NAND3_X4                      118
+     NAND4_X1                     2242
+     NAND4_X2                       67
+     NAND4_X4                       21
+     NOR2_X1                     14809
+     NOR2_X2                      2175
+     NOR2_X4                       675
+     NOR3_X1                      1207
+     NOR3_X2                       103
+     NOR3_X4                        12
+     NOR4_X1                       216
+     NOR4_X2                        36
+     NOR4_X4                        11
+     OAI211_X2                      12
+     OAI211_X4                       1
+     OAI21_X1                    14078
+     OAI21_X2                      510
+     OAI21_X4                       84
+     OAI221_X1                     777
+     OAI221_X2                      12
+     OAI22_X1                      871
+     OAI22_X2                        1
+     OR2_X1                       2997
+     OR2_X2                        157
+     OR2_X4                         54
+     OR3_X1                        143
+     OR3_X2                         21
+     OR3_X4                          8
+     OR4_X1                         61
+     OR4_X2                          4
+     XNOR2_X1                     7690
+     XNOR2_X2                      391
+     XOR2_X1                       602
+     XOR2_X2                        11
 
-   Chip area for module '\int4fp16_compute_64': 142321.970000
-     of which used for sequential elements: 0.000000 (0.00%)
+   Chip area for module '\awq_int4fp16_pcu_64_lane': 198832.872000
+     of which used for sequential elements: 24662.988000 (12.40%)
 

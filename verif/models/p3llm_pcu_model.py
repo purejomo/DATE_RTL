@@ -11,6 +11,7 @@ from p3llm_formats import (
     decode_fp8_e4m3,
     decode_fp8_s0e4m4,
     decode_int4_asym,
+    saturate_signed,
     wrap_signed,
 )
 
@@ -93,9 +94,9 @@ def pe_dot(
         raw = lhs.mantissa * rhs
         if raw != wrap_signed(raw, 12):
             raise OverflowError(f"legal raw product {raw} does not fit 12 bits")
-        shifted = raw << lhs.shift
-        if shifted != wrap_signed(shifted, 26):
-            raise OverflowError(f"legal shifted product {shifted} does not fit 26 bits")
+        # fixed_product_shift saturates at 26 bits instead of dropping the
+        # overflowing bit, so the model clamps here rather than raising.
+        shifted = saturate_signed(raw << lhs.shift, 26)
 
         lhs_decoded.append(lhs)
         rhs_values.append(rhs)
@@ -165,7 +166,10 @@ class PcuGolden:
             if acc_clear:
                 next_acc[pe] = wrap_signed(trace.partial_sum, 32)
             elif acc_enable:
-                next_acc[pe] = wrap_signed(self.accumulators[pe] + trace.partial_sum, 32)
+                # p3llm_pe saturates rather than wrapping: an overflow used to
+                # flip the sign with nothing in silicon able to report it.
+                next_acc[pe] = saturate_signed(
+                    self.accumulators[pe] + trace.partial_sum, 32)
 
         self.accumulators[:] = next_acc
         return tuple(self.accumulators), tuple(traces)
