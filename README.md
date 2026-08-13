@@ -6,12 +6,15 @@
 
 ## 1. 비교군
 
-| 논문 행 | 정밀도 (W/A) | 조직 | 누산 | top 모듈 |
-|---|---|---|---|---|
-| hbm-pim | FP16 | SIMD MAC 레인 | binary32 | `hbmpim_fp16_pcu_16_lane` |
-| awq-hbm-pim | INT4/FP16, INT4/BF16 | SIMD MAC 레인 | binary32 | `awq_int4{fp,bf}16_pcu_{16,32,64}_lane` |
-| awq-p3-llm | INT4/FP16, INT4/BF16 | P3-LLM PCU | signed 32b 고정소수점 | `int4{fp,bf}16_pcu32`, `int4{fp,bf}16_pcu_top` |
-| p3llm | FP4/FP8 | P3-LLM PCU | signed 32b 고정소수점 | `p3llm_pcu` |
+| 비교군 | 정밀도 (W/A) | 합성 구성 | 누산 | 목표 클록 | top 모듈 |
+|---|---|---|---|---:|---|
+| hbm-pim | FP16/FP16 | SIMD 16 lane  | binary32 | 250 MHz | `hbmpim_fp16_pcu_16_lane` |
+| awq-hbm-pim | INT4/FP16, INT4/BF16 | SIMD 16/32/64 lane  | binary32 | 500 MHz | `awq_int4{fp,bf}16_pcu_{16,32,64}_lane` |
+| awq-p3-llm | INT4/FP16, INT4/BF16 | 8/16 PE | signed 32b 고정소수점 | 500 MHz | `int4{fp,bf}16_pcu32`, `int4{fp,bf}16_pcu_top` |
+| p3llm | FP4/FP8 | 16 PE | signed 32b 고정소수점 | 500 MHz | `p3llm_pcu` |
+
+모든 비교군은 multiplier와 accumulator를 포함한 연산 경계로 합성한다.
+GRF/SRF, 데이터 버퍼, 명령 디코더 및 메모리 인터페이스는 합성 범위에 포함하지 않는다.
 
 ---
 
@@ -30,7 +33,6 @@ DATE_RTL/
 │   └── fp32/              binary32 누산 경로 Verilator 검증 (cocotb 불필요)
 └── results/               면적 · 타이밍 · 전력 리포트, 최종 표
 ```
-
 
 ## 3. 재현 방법
 
