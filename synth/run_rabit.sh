@@ -78,4 +78,6 @@ for label in "${labels[@]}"; do
     cp -a "${OUT}/reports/${label}" "${RESULTS}/reports/${label}"
 done
 
+mkdir -p "${RESULTS}/designs"
+python3 "${ROOT}/tools/rabit_accuracy.py" > "${RESULTS}/designs/rabit_accuracy.md"
 python3 "${HERE}/build_rabit_report.py"

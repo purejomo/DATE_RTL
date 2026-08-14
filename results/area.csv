@@ -20,3 +20,13 @@ rabit_pcu_m10_noshift_250,rabit_pcu_m10_noshift,44348.850000,36390,2184,4.0
 rabit_blk_cvt_250,rabit_blk_cvt,5002.130000,4956,0,4.0
 rabit_blk_pe_250,rabit_blk_pe,3693.410000,3767,17,4.0
 rabit_blk_acc_250,rabit_blk_acc,20871.690000,15694,2048,4.0
+rabit_pcu_fs_250,rabit_pcu_fs,93522.408000,79921,4208,4.0
+rabit_pcu_fs_500,rabit_pcu_fs,93522.408000,79921,4208,2.0
+rabit_pcu_fs_h16_250,rabit_pcu_fs_h16,106276.842000,90704,4463,4.0
+rabit_fs_blk_hscale_250,rabit_fs_blk_hscale,20650.910000,17771,773,4.0
+rabit_fs_blk_gbuf_250,rabit_fs_blk_gbuf,12484.444000,9055,1093,4.0
+rabit_fs_blk_dq_250,rabit_fs_blk_dq,28083.216000,25320,703,4.0
+rabit_fs_blk_hscale_500,rabit_fs_blk_hscale,20650.910000,17771,773,2.0
+rabit_fs_blk_dq_500,rabit_fs_blk_dq,28083.216000,25320,703,2.0
+rabit_pcu_fs_p_250,rabit_pcu_fs_p,94840.970000,79200,4467,4.0
+rabit_pcu_fs_p_500,rabit_pcu_fs_p,94840.970000,79200,4467,2.0

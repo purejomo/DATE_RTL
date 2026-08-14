@@ -189,6 +189,7 @@ class Harness:
             "wr_ready": int(dut.wr_ready_o.value),
             "rd_ready": int(dut.rd_ready_o.value),
             "dq_ready": int(dut.dq_ready_o.value),
+            "drain_ready": int(dut.drain_ready_o.value),
             "dq_busy": int(dut.dq_busy_o.value),
             "y_valid": int(dut.y_valid_o.value),
             "y_data": int(dut.y_data_o.value),
@@ -257,35 +258,63 @@ class Harness:
         assert second["rd_ready"] == 1, "column word not consumed in NPATH cycles"
 
     async def dq_drain(self):
+        """Request the drain and collect its beats.
+
+        dq_req_i is held until dq_ready_o goes high, the usual ready/valid rule:
+        the last column word's stage B is still retiring into the accumulator
+        file when the request arrives, and the sequencer refuses to start until
+        the pipeline is empty.
+        """
+
         self.y_beats = []
 
         def drive(dut):
             dut.dq_req_i.value = 1
 
-        snap = await self.cycle(drive)
-        assert snap["dq_ready"] == 1, "dequantizing drain was not accepted"
+        for wait in range(DRAIN_CYCLES):
+            snap = await self.cycle(drive)
+            if snap["dq_ready"]:
+                break
+        else:
+            raise AssertionError("dequantizing drain was never accepted")
 
         busy_cycles = 0
-        while len(self.y_beats) < Y_BEATS:
+        for _ in range(4 * DRAIN_CYCLES):
             snap = await self.idle_snap()
             if snap["dq_busy"]:
                 busy_cycles += 1
-            assert busy_cycles < 4 * DRAIN_CYCLES, "drain never finished"
-        return busy_cycles
+            if len(self.y_beats) == Y_BEATS:
+                return busy_cycles
+        raise AssertionError(
+            f"drain produced {len(self.y_beats)} of {Y_BEATS} beats"
+        )
 
     async def idle_snap(self):
         return await self.cycle(lambda dut: None)
 
     async def raw_drain(self, group):
+        """Base-semantics debug drain: NPATH beats of raw accumulators."""
+
         self.drain_beats = []
 
         def drive(dut):
             dut.drain_req_i.value = 1
             dut.drain_group_i.value = group
 
-        await self.cycle(drive)
-        while len(self.drain_beats) < NPATH:
+        for _ in range(8):
+            snap = await self.cycle(drive)
+            if snap["drain_ready"]:
+                break
+        else:
+            raise AssertionError("raw drain was never accepted")
+
+        for _ in range(8):
+            if len(self.drain_beats) == NPATH:
+                return
             await self.idle()
+        raise AssertionError(
+            f"raw drain produced {len(self.drain_beats)} of {NPATH} beats"
+        )
 
 
 async def reset(dut):
@@ -478,14 +507,20 @@ async def test_fs_drain_cost(dut):
     def request(dut_):
         dut_.dq_req_i.value = 1
 
-    snap = await harness.cycle(request)
-    assert snap["dq_ready"] == 1
+    for _ in range(DRAIN_CYCLES):
+        snap = await harness.cycle(request)
+        if snap["dq_ready"]:
+            break
+    else:
+        raise AssertionError("dequantizing drain was never accepted")
 
     stalled = 0
-    while len(harness.y_beats) < Y_BEATS:
+    for _ in range(4 * DRAIN_CYCLES):
         snap = await harness.idle_snap()
         if snap["dq_busy"]:
             stalled += 1
+        if len(harness.y_beats) == Y_BEATS:
+            break
 
     # 16 port cycles plus the three pipeline stages behind them.
     assert stalled == DRAIN_CYCLES + 3, (

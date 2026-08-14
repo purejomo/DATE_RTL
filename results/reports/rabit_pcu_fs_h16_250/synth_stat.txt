@@ -1,0 +1,80 @@
+
+19. Printing statistics.
+
+=== rabit_pcu_fs_h16 ===
+
+   Number of wires:              94643
+   Number of wire bits:          96129
+   Number of public wires:        4438
+   Number of public wire bits:    5924
+   Number of ports:                 37
+   Number of port bits:           1523
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              90704
+     AND2_X1                       769
+     AND2_X2                        57
+     AND2_X4                        13
+     AND3_X1                        90
+     AND3_X2                        13
+     AND3_X4                         2
+     AND4_X1                        28
+     AOI21_X1                     5109
+     AOI21_X2                      155
+     AOI21_X4                       90
+     AOI22_X1                      167
+     BUF_X1                       2516
+     BUF_X16                        45
+     BUF_X2                        319
+     BUF_X32                        16
+     BUF_X4                        303
+     BUF_X8                        114
+     CLKBUF_X1                     506
+     CLKBUF_X2                       7
+     CLKBUF_X3                      52
+     DFF_X1                       4463
+     INV_X1                      14487
+     INV_X2                        461
+     INV_X4                        166
+     INV_X8                         22
+     LOGIC0_X1                       1
+     MUX2_X1                       700
+     MUX2_X2                         6
+     NAND2_X1                    21754
+     NAND2_X2                     1549
+     NAND2_X4                      589
+     NAND3_X1                     5456
+     NAND3_X2                      325
+     NAND3_X4                       55
+     NAND4_X1                      408
+     NAND4_X2                       43
+     NAND4_X4                       27
+     NOR2_X1                      5589
+     NOR2_X2                       414
+     NOR2_X4                       196
+     NOR3_X1                       298
+     NOR3_X2                        10
+     NOR3_X4                         5
+     NOR4_X1                        53
+     OAI211_X2                      12
+     OAI21_X1                     8617
+     OAI21_X2                      156
+     OAI21_X4                       44
+     OAI221_X1                     355
+     OAI22_X1                     3098
+     OAI22_X2                        1
+     OR2_X1                       2631
+     OR2_X2                        185
+     OR2_X4                         46
+     OR3_X1                         79
+     OR3_X2                          5
+     OR4_X1                         21
+     XNOR2_X1                     6743
+     XNOR2_X2                      180
+     XOR2_X1                      1020
+     XOR2_X2                        63
+
+   Chip area for module '\rabit_pcu_fs_h16': 106276.842000
+     of which used for sequential elements: 20181.686000 (18.99%)
+

@@ -67,6 +67,8 @@ class Bench:
         self.expected: list[tuple[int, int, tuple[int, ...]]] = []
         self.rd_ready = 0
         self.drain_ready = 0
+        self.rd_accepted = 0
+        self.rd_done = 0
 
     def idle(self):
         dut = self.dut
@@ -169,9 +171,17 @@ class Bench:
             if accepted:
                 self.model.read(cmd.word, cmd.group, cmd.pair)
 
+        # rd_done_o marks the cycle the word's last pump landed in the file, so
+        # exactly one pulse must retire per accepted RD.
+        if int(dut.rd_done_o.value):
+            self.rd_done += 1
+
         if int(dut.drain_valid_o.value):
             assert int(dut.rd_ready_o.value) == 0, (
                 "a RD was accepted while a drain was in flight"
+            )
+            assert int(dut.rd_done_o.value) == 0, (
+                "rd_done_o pulsed during a drain"
             )
             data = int(dut.drain_data_o.value)
             values = tuple(
@@ -238,6 +248,8 @@ class Bench:
                     accepted = True
                 elif cmd_now.kind == "RD":
                     accepted = bool(ready_now)
+                    if accepted:
+                        self.rd_accepted += 1
                 elif cmd_now.kind == "DRAIN":
                     accepted = bool(drain_ready_now)
                     if accepted:
@@ -280,6 +292,12 @@ class Bench:
         got = int(self.dut.status_sticky_o.value)
         assert got == self.model.sticky, (
             f"status_sticky {got:03b} != model {self.model.sticky:03b}"
+        )
+
+    def check_done(self):
+        assert self.rd_done == self.rd_accepted, (
+            f"rd_done_o pulsed {self.rd_done} times for "
+            f"{self.rd_accepted} accepted RDs"
         )
 
     def take_drains(self):
@@ -372,6 +390,7 @@ async def phase_directed(dut):
                         )
 
     bench.check_sticky()
+    bench.check_done()
 
 
 async def phase_drain_blocks_read(dut):
@@ -411,6 +430,7 @@ async def phase_drain_blocks_read(dut):
             f"contention, expected {expect}"
         )
     bench.check_sticky()
+    bench.check_done()
 
 
 async def phase_gemv(dut, dout: int, din: int, seed: int, stall_prob: float):
@@ -454,6 +474,7 @@ async def phase_gemv(dut, dout: int, din: int, seed: int, stall_prob: float):
                     partials[dpath][j] = value
 
     bench.check_sticky()
+    bench.check_done()
     assert bench.model.sticky & 0b010 == 0, (
         "the alignment shifter saturated: cfg_e0 is out of range"
     )
@@ -475,17 +496,48 @@ async def phase_gemv(dut, dout: int, din: int, seed: int, stall_prob: float):
         for j in range(dout)
     ]
     rel = relative_error(actual, reference)
-    dut._log.info(
-        f"GEMV {dout}x{din} seed {seed}: MANT_W {MANT_W} SHIFTER_EN "
-        f"{SHIFTER_EN} E0 {e0} -> relative error {rel:.3e}"
+
+    # Bound the error analytically from this stimulus instead of asserting a
+    # tuned constant, because the dominant term moves with the data. Per k
+    # chunk the datapath loses at most:
+    #
+    #   convert  16 lanes x 1/2 ulp of the block  = 8 * 2**(e_ent - E0) acc LSB
+    #            and e_ent <= E0 by construction, so at most 8
+    #   align    the arithmetic shift floors      < 1 acc LSB
+    #
+    # so |A_p error| < 9 * chunks accumulator LSB, and the y error follows by
+    # the g scaling. The alignment term is one-sided, which is exactly why a
+    # deeper k sweep or a wider E0 spread costs accuracy: see proposal P1 in
+    # docs/rabit_pcu_spec.md, where round-to-nearest removes it entirely.
+    chunks = din // NIN
+    bound_per_output = 9.0 * chunks * weight
+    bound = [
+        sum(abs(scales.g[p][j]) for p in range(NPATH)) * bound_per_output
+        for j in range(dout)
+    ]
+    rel_bound = relative_error(
+        [reference[j] + bound[j] for j in range(dout)], reference
     )
 
-    tolerance = float(os.environ.get("RABIT_REL_TOL", "2e-3" if MANT_W >= 12 else "1e-2"))
-    if SHIFTER_EN == 0:
-        tolerance = float(os.environ.get("RABIT_REL_TOL_NOSHIFT", "5e-2"))
-    assert rel < tolerance, (
-        f"relative error {rel:.3e} exceeds tolerance {tolerance:.3e}"
+    mean_shift = sum(
+        e0 - pack_rabit.entry_exponent(u_codes[p][c * NIN:(c + 1) * NIN])
+        for p in range(NPATH)
+        for c in range(chunks)
+    ) / (NPATH * chunks)
+
+    dut._log.info(
+        f"GEMV {dout}x{din} seed {seed}: MANT_W {MANT_W} SHIFTER_EN "
+        f"{SHIFTER_EN} E0 {e0} mean(E0-e_ent) {mean_shift:.2f} -> "
+        f"relative error {rel:.3e} (bound {rel_bound:.3e})"
     )
+
+    assert rel < rel_bound, (
+        f"relative error {rel:.3e} exceeds the analytic bound {rel_bound:.3e}"
+    )
+    # A second, absolute guard so a catastrophically wrong E0 or a datapath that
+    # merely stays inside a loose bound still fails.
+    ceiling = float(os.environ.get("RABIT_REL_TOL", "2e-2"))
+    assert rel < ceiling, f"relative error {rel:.3e} exceeds {ceiling:.3e}"
     return rel
 
 

@@ -97,6 +97,33 @@ ROWS = [
     # increase the accepted low-precision GEMV MAC count.
     ("p3llm",   "FP4/FP8->FP16", "P3-LLM PCU+DQ", 64,
      "p3llm_pcu_dequant_500",    64, 16, 64, 500, True),
+
+    # RaBiT is the one row where the multiplier count and MAC/cycle diverge, so
+    # read the two columns separately:
+    #
+    #   mul = 0      There is no multiplier in the design and there must not be.
+    #                A weight is one bit, so the product is the activation
+    #                mantissa with a conditional sign flip; g and h scaling
+    #                stays with the host.
+    #   MAC/cy = 128 8 PEs x 16 inputs signed products are accepted every cycle,
+    #                and both pump cycles are productive (path 1 then path 2),
+    #                so the rate is sustained rather than peak.
+    #
+    #   add = 8      Accumulation adder lanes, one per PE, matching how the
+    #                other rows count. RaBiT time-multiplexes those 8 lanes over
+    #                64 architectural accumulators (4 output groups x 2 paths),
+    #                which is why its DFF count is high for its area -- see
+    #                results/designs/rabit.md.
+    #
+    # um2/MAC therefore compares a 2-bit residual-binary product against FP16
+    # and INT4 products. That is the same cross-precision comparison the rest of
+    # the table already makes; the precision column is what qualifies it.
+    #
+    # Only the 250 MHz row is listed. The 500 MHz build misses setup by 0.04 ns
+    # on the convert path, so it is a sweep point in results/designs/rabit.md
+    # rather than a table row.
+    ("rabit",   "2-bit RB/FP16", "RaBiT PCU",  128,
+     "rabit_pcu_250",             0,  8, 128, 250, True),
 ]
 
 

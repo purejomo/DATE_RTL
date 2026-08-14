@@ -46,6 +46,9 @@ FINAL_EXISTING_LABELS = (
     "int4fp16_pcu_top_pcu500",
     "int4bf16_pcu_top_pcu500",
     "p3llm_pcu_500",
+    # RaBiT carries mul = 0: the weight is one bit, so there is no multiplier to
+    # count. Its MAC/cy is the number of signed products accepted per cycle.
+    "rabit_pcu_250",
 )
 
 CSV_FIELDS = (
@@ -167,7 +170,10 @@ def measured_row(
     netlist: pathlib.Path | None = None,
 ) -> dict:
     """Validate and normalize one measured 45nm row before projection."""
-    if mhz <= 0 or mul <= 0 or add <= 0 or mac_per_cycle <= 0:
+    # mul is allowed to be zero: a 1-bit weight makes the product a conditional
+    # sign flip, so a multiplier-free row is a real configuration rather than a
+    # missing field. Everything the table divides by still has to be positive.
+    if mhz <= 0 or mul < 0 or add <= 0 or mac_per_cycle <= 0:
         raise ValueError(f"{design}: operator counts and throughput must be positive")
     top = (entry.get("top") or "").strip()
     area = finite_float(entry.get("area_um2"), source=area_source, field="area_um2")
@@ -207,8 +213,11 @@ def collect() -> list[dict]:
             netlist=HERE.parent / "build" / "results" / label / "1_synth.v",
         ))
 
-    if len(rows) != 10:
-        raise AssertionError(f"expected 10 final rows, collected {len(rows)}")
+    if len(rows) != len(FINAL_EXISTING_LABELS):
+        raise AssertionError(
+            f"expected {len(FINAL_EXISTING_LABELS)} final rows, "
+            f"collected {len(rows)}"
+        )
     return rows
 
 

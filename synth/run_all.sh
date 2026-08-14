@@ -98,6 +98,24 @@ P3LLM_DEQUANT_SOURCES=(
     "${RTL}/4_p3llm_with_dequant/p3llm_pcu_dequant.sv"
 )
 
+# RaBiT 2-bit residual binarization. No multiplier at all, so the arithmetic
+# boundary is the convert-on-write unit, the eight PEs and the accumulator
+# array. That array is inside the boundary on purpose: a stripe keeps 32
+# outputs x 2 paths resident for a whole k sweep, which makes it arithmetic
+# state rather than a buffer. synth/run_rabit.sh builds the same rows plus the
+# MANT_W / SHIFTER_EN sweep and the per-module breakdown without re-running the
+# other designs.
+RABIT_BASE_SOURCES=(
+    "${RTL}/5_rabit/rabit_compressor_4to2.sv"
+    "${RTL}/5_rabit/rabit_cvt_fp16_blk.sv"
+    "${RTL}/5_rabit/rabit_align_shift.sv"
+    "${RTL}/5_rabit/rabit_pe.sv"
+    "${RTL}/5_rabit/rabit_acc_regfile.sv"
+    "${RTL}/5_rabit/rabit_pcu_ctrl.sv"
+    "${RTL}/5_rabit/rabit_pcu_top.sv"
+    "${RTL}/5_rabit/rabit_pcu_synth.sv"
+)
+
 # label : top : clock period (ns) : source set
 ROWS=(
     "compute_hbmpim_250      : hbmpim_fp16_pcu_16_lane       : 4.0 : hbmpim_simd"
@@ -113,6 +131,12 @@ ROWS=(
     "int4bf16_pcu_top_pcu500 : int4bf16_pcu_top     : 2.0 : pcu16"
     "p3llm_pcu_500           : p3llm_pcu            : 2.0 : p3llm"
     "p3llm_pcu_dequant_500   : p3llm_pcu_dequant    : 2.0 : p3llm_dequant"
+    # Only the 250 MHz build is a table row. The 500 MHz build misses setup by
+    # 0.04 ns, and both share the top name rabit_pcu -- do_power writes one
+    # report per top, so listing both here would leave the 250 MHz row reading
+    # 500 MHz power. The 500 MHz point lives in run_rabit.sh with the rest of
+    # the sweep, which does not run power.
+    "rabit_pcu_250           : rabit_pcu            : 4.0 : rabit"
 )
 
 field() { echo "$1" | cut -d: -f"$2" | tr -d ' '; }
@@ -125,6 +149,7 @@ sources_for() {
         pcu16)       printf '%s\n' "${PCU16_SOURCES[@]}" ;;
         p3llm)       printf '%s\n' "${P3LLM_SOURCES[@]}" ;;
         p3llm_dequant) printf '%s\n' "${P3LLM_DEQUANT_SOURCES[@]}" ;;
+        rabit)       printf '%s\n' "${RABIT_BASE_SOURCES[@]}" ;;
     esac
 }
 

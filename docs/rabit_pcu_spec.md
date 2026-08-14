@@ -9,7 +9,7 @@ Bank-attached PIM 연산기. RaBiT 2-bit residual binarization 정밀도의
 - Golden model: [verif/models/rabit_model.py](../verif/models/rabit_model.py)
 - 회귀: `cd verif && make TEST=rabit_pcu` (전체는 `make`)
 - 합성: `cd synth && ./run_rabit.sh`
-- 면적·타이밍 리포트: [results/rabit_area_report.md](../results/rabit_area_report.md)
+- 면적·타이밍 리포트: [results/designs/rabit_area_report.md](../results/designs/rabit_area_report.md)
 
 ---
 
@@ -181,17 +181,67 @@ cycle 1 (pump 1): word 의 path-2 bit 8x16  -> 8 PE -> acc[og][*][path1] RMW
 pump p 는 path-p bit plane 을 path-p **입력 entry** 와 짝짓는다. 즉
 `A_1` 은 `(B_1, u_1)`, `A_2` 는 `(B_2, u_2)` 로만 만들어진다.
 
-### 4.2 파이프라인
+### 4.2 데이터패스
+
+```
+   WR (fp16 x16, 256b)
+        |
+        v
+ +----------------+   blk {e_ent, sign/mant x16}    +-------------+
+ | cvt_fp16_to_blk| ------------------------------> | input GRF   |
+ +----------------+                                 | 4 entry     |  <- 합성 밖
+   [합성 포함]                                       +------+------+
+                                                            | grf_blk_i
+   RD word 256b                                             | (u1, u2)
+        |                                                   |
+        |     +--------- path_sel (pump) --------+          |
+        v     v                                  v          v
+   +--------------------+                  +---------------------+
+   | word slice per PE  |                  | block select (2:1)  |
+   |  [j*32 + p*16 +:16]|                  |  -> mant bus, e_ent |
+   +---------+----------+                  +-----+---------+-----+
+             | b_bits x8                          | blk_mant | e_ent
+             v                                    v          v
+   +-------------------------------------------------+   shift_c = e_ent - E0
+   | pe_array : rabit_pe x 8                         |        |
+   |   sign XOR -> 4:2 tree(16) -> CPA -> [psum_q]   | <------+ (shift_q)
+   |   -> align shift -> 32b saturating add          |
+   +----------------+--------------------------+-----+
+        acc_cur_i   ^                          | acc_next_o
+                    |                          v
+              +-----+--------------------------------+
+              | acc_regfile  8 slot x 8 PE x 32b     |  [합성 포함]
+              |   slot = {out_group, path}           |
+              +-------------------+------------------+
+                                  | drain_data_o 256b
+                                  v
+                            DRAM bank writeback        <- 합성 밖
+```
+
+### 4.3 파이프라인과 2-pump 타이밍
 
 ```
 stage A (1 cycle) : bit/entry 선택 -> sign XOR + carry 보정 -> 4:2 tree -> CPA -> psum_q
 stage B (1 cycle) : barrel shift (e_ent - E0) -> acc read -> 32b saturating add -> acc write
 ```
 
-지연 2 cycle, throughput 1 word / 2 cycle. 같은 slot 에 연속으로 써도 stage B
-안에서 read-modify-write 가 끝나므로 hazard 가 없다.
+RD 두 개를 연속으로 넣었을 때 (word W, word X):
 
-### 4.3 명령 스케줄
+```
+cycle       0     1     2     3     4
+rd_valid    W     W     X     X     .
+rd_ready    0     1     0     1     0        <- 마지막 pump 에서만 1
+stage A     W.p0  W.p1  X.p0  X.p1  .
+stage B     .     W.p0  W.p1  X.p0  X.p1
+acc write   .     W.p0  W.p1  X.p0  X.p1     <- slot {og_W,0} {og_W,1} ...
+rd_done     .     .     W     .     X
+```
+
+지연 2 cycle, throughput 1 word / 2 cycle. 같은 slot 에 연속으로 써도 stage B
+안에서 read-modify-write 가 끝나므로 hazard 가 없다. word W 의 두 pump 는 서로
+다른 slot (path 0 / path 1) 을 건드리므로 그 사이에도 충돌이 없다.
+
+### 4.4 명령 스케줄
 
 16-input chunk 단위로 testbench(실제로는 CRF)가 생성한다.
 
@@ -204,7 +254,7 @@ WR:RD = 2:4. stripe 의 k sweep 이 끝나면 group 0..3 을 drain 한다.
 GRF entry 는 더블버퍼다: chunk c 는 pair `c % 2` 를 쓰므로 entry {0,1} 과 {2,3}
 이 번갈아 쓰인다.
 
-### 4.4 누산기 배열
+### 4.5 누산기 배열
 
 ```
 64 x 32b FF = 4 group x (8 out x 2 path)
@@ -334,11 +384,13 @@ WR 과 RD 는 같은 column command slot 을 쓰므로 동시에 valid 일 수 �
 | 테스트 | top | 무엇을 확인하나 |
 |---|---|---|
 | `rabit_cvt` | `rabit_cvt_tb` | 반올림(RNE, tie-to-even), subnormal, max-exp 경계, 지수 spread, MANT_W 12/10 및 SHIFTER_EN 0 동시 |
+| `rabit_align` | `rabit_align_tb` | 지수 정렬: shift 전 범위(-64..63) x 경계 psum, `SHIFT_RND` 0/1 동시 |
 | `rabit_pe` | `rabit_pe` | 부호 조합 전수, one-hot lane, 최대/최소 partial, shift 경계(`+15/+16`, `-17/-18`), 누산기 saturation 양방향, `ce_i` hold |
 | `rabit_acc` | `rabit_acc_regfile` | slot 격리, wr_en 무시, clear, read-modify-write 순서, reset |
 | `rabit_pcu` | `rabit_pcu` | end-to-end GEMV (64 x 4096), golden model 대조 + 정확한 유리수 reference 대조 |
 | `rabit_pcu_m10` | `rabit_pcu_m10` | 같은 것, MANT_W 10 |
 | `rabit_pcu_noshift` | `rabit_pcu_noshift` | 같은 것, SHIFTER_EN 0 |
+| `rabit_pcu_m10_noshift` | `rabit_pcu_m10_noshift` | 같은 것, 두 노브 동시 |
 
 `rabit_pe` 와 `rabit_pcu*` 는 설계 자체의 assertion (`RABIT_ASSERTIONS`) 을 켜고
 돈다. PE 의 assertion 은 4:2 tree 의 modulo 연산 결과를 매 cycle 정확한
@@ -366,7 +418,7 @@ reference 를 만들 수 있다 — `y_ref` 는 반올림이 없는 참값이고
 |---|---|---|
 | `RABIT_GEMV_DOUT` / `RABIT_GEMV_DIN` | end-to-end GEMV 크기 | 64 / 4096 |
 | `RABIT_SEEDS` | 시드 목록 | `1,2,3` |
-| `RABIT_CVT_ITERS`, `RABIT_PE_ITERS`, `RABIT_ACC_ITERS` | 랜덤 반복 | 4000 / 3000 / 2000 |
+| `RABIT_CVT_ITERS`, `RABIT_ALIGN_ITERS`, `RABIT_PE_ITERS`, `RABIT_ACC_ITERS` | 랜덤 반복 | 4000 / 4000 / 3000 / 2000 |
 
 `din` 은 Llama-2-7B projection 의 k 차원 그대로다. `dout` 은 stripe 를 복제할
 뿐이라 줄였고, 4096x4096 · 11008x4096 전체 형상은
@@ -399,14 +451,16 @@ NPU 가 유한성을 보장해야 한다. testbench 는 이 동작을 명시적�
 독립적으로 쓰고 싶다면 assertion 만 빼면 되고 데이터패스는 그대로다.
 
 **Q5. `SHIFT_RND`.** 스펙이 "산술 shift" 라고 못박아 기본값은 0 (truncation)
-이다. 스펙 외 옵션으로만 넣었다. §10 P1 참고.
+이다. 스펙 외 옵션으로만 넣었지만 검증되지 않은 RTL 을 남기지 않으려고
+`rabit_align` 테스트가 두 모드를 함께 돌린다. §10 P1 참고.
 
-**Q6. 500 MHz 목표.** 250 MHz 에서는 여유가 크다. 500 MHz 결과는
-[results/rabit_area_report.md](../results/rabit_area_report.md) 참고. critical
-path 는 `wr_fp16_i -> cvt_blk_o` 조합 경로다 (변환기가 GRF write port 에
-직결이라 의도된 구조). 더 빠른 주기가 필요하면 변환 출력을 1 단 register 하는
-방식이 있는데, WR->GRF 지연이 1 cycle 늘어 AAM barrier 타이밍에 영향을 주므로
-구현하지 않고 제안으로만 남긴다 (§10 P2).
+**Q6. 500 MHz 목표.** 250 MHz 에서는 slack +1.16 ns 로 여유가 크다. 500 MHz
+에서는 합성 리포트상 -0.04 ns (2 %) 미달이고, critical path 는
+`wr_fp16_i -> cvt_blk_o` 조합 경로다 (변환기가 GRF write port 에 직결이라
+의도된 구조). 이 경로에 걸린 I/O delay 예산(입출력 각 20 %)을 빼면 순수 논리
+지연은 약 1.25 ns 라 2.0 ns 주기 안에 들어간다. 더 확실한 마진이 필요하면
+변환 출력을 1 단 register 하는 방식이 있는데, WR->GRF 지연이 1 cycle 늘어
+AAM barrier 타이밍에 영향을 주므로 구현하지 않고 제안으로만 남긴다 (§10 P2).
 
 ---
 
@@ -414,11 +468,28 @@ path 는 `wr_fp16_i -> cvt_blk_o` 조합 경로다 (변환기가 GRF write port 
 
 스펙 §9 에 따라 대안은 기록만 한다.
 
-**P1. 정렬 우 shift 의 RNE.** 현재는 산술 shift(floor)라서 chunk 마다 평균
--0.5 LSB 의 편향이 쌓인다. din = 4096 이면 256 chunk 이므로 -128 LSB 다.
-`tools/rabit_accuracy.py` 측정으로는 `MANT_W 12` 에서 PCU 상대오차가
-7.3e-4 -> 2.1e-4 로 3.5 배 줄어든다. 비용은 PE 당 34-bit barrel shifter 와
-18-bit 증분 하나. `SHIFT_RND=1` 로 켤 수 있지만 기본은 꺼 두었다.
+**P1. 정렬 우 shift 의 RNE.** 스펙이 "산술 shift" 라고 못박은 결과 chunk 마다
+평균 -0.5 LSB 의 **단방향** 편향이 쌓인다. din = 4096 이면 256 chunk 이므로
+-128 LSB 다. 이 편향이 이 데이터패스 오차의 지배항이고, 그래서 오차가
+`mean(E0 - e_ent)` 에 따라 커진다 — 입력 한 entry 의 지수가 튀어 E0 가 1 올라가면
+모든 chunk 가 한 칸 더 잘린다.
+
+din = 4096, dout = 64, MANT_W 12 에서 seed 별 실측:
+
+| seed | E0 | mean(E0 - e_ent) | 산술 shift (기본) | RNE |
+|---:|---:|---:|---:|---:|
+| 1 | 16 | 0.46 | 7.97e-4 | 1.6e-4 |
+| 2 | 17 | 1.42 | 3.81e-3 | 2.0e-4 |
+| 3 | 16 | 0.46 | 7.61e-4 | 1.5e-4 |
+
+**RNE 를 켜면 오차가 shift 깊이와 무관하게 평평해진다** (1.5~2.0e-4). 즉 지금
+보이는 4.8 배 산포는 정밀도 손실이 아니라 순전히 편향이다. 비용은 PE 당 34-bit
+barrel shifter 와 18-bit 증분 하나. `SHIFT_RND=1` 로 켤 수 있고 `rabit_align`
+테스트가 두 모드를 함께 검증하지만, 스펙을 따라 기본값은 0 이다.
+
+E0 가 max e_ent 로 잡히는 한 최악의 경우에도 양자화 오차(약 3e-1)의 1/70
+수준이라 기본 구성 그대로도 문제는 없다. 다만 din 이 더 깊어지거나 활성값
+분포의 꼬리가 길어지면 이 항이 먼저 커진다는 점은 알고 있어야 한다.
 
 **P2. Convert 출력 register.** §9 Q6.
 
@@ -431,3 +502,49 @@ path 는 `wr_fp16_i -> cvt_blk_o` 조합 경로다 (변환기가 GRF write port 
 **P4. Path 별 E0 분리.** 지금은 두 path 가 같은 `cfg_e0_i` 를 쓴다. `u_1` 과
 `u_2` 의 동적 범위가 크게 다르면 (h_1, h_2 스케일 차이) path 별 E0 가 유리할 수
 있다. 포트 하나와 mux 하나가 추가된다.
+
+---
+
+## 11. 결과 요약
+
+전체 수치는 [results/designs/rabit_area_report.md](../results/designs/rabit_area_report.md).
+
+| 항목 | 값 |
+|---|---|
+| 면적 (250 MHz) | **45,254 um2** = baseline 16-lane FP16 SIMD 의 **0.752x** |
+| 곱셈기 | **0 개** |
+| 누산기 | 64 x 32b = 2,048 FF (합성 포함) |
+| 타이밍 | 250 MHz slack +1.16 ns (MET) / 500 MHz -0.04 ns |
+| PCU 상대오차 (MANT_W 12) | 7.6e-4 ~ 3.8e-3 (din 4096, `mean(E0-e_ent)` 에 따라) |
+| 양자화 상대오차 | 약 3e-1 — PCU 오차보다 **두~세 자릿수** 크다 |
+
+핵심은 마지막 두 줄이다. 고정소수점 데이터패스가 만드는 오차는 residual
+binarization 자체의 오차보다 최소 두 자릿수 작으므로, 이 PCU 는 RaBiT 정확도에
+사실상 영향을 주지 않으면서 baseline 면적의 3/4 로 동작한다.
+
+PCU 오차의 산포(7.6e-4 ~ 3.8e-3)는 정밀도가 아니라 **정렬 우 shift 의 단방향
+편향** 때문이다. 스펙이 지정한 산술 shift 를 그대로 구현한 결과이고,
+§10 P1 에 측정값과 함께 정리했다. RNE 를 켜면 1.5~2.0e-4 로 평평해진다.
+
+면적을 더 줄여야 할 때의 노브 순서:
+
+1. `MANT_W` 12 -> 10: -3,157 um2 (-7.0 %), PCU 오차 7.9e-4 -> 3.3e-3
+   (여전히 양자화 오차의 1/100)
+2. `SHIFTER_EN` off: **효과 없음** (+523 um2). 쓰지 말 것.
+3. group 수 / `ACC_W`: 누산기 배열이 전체의 큰 비중이지만 둘 다 스펙이
+   정하는 값이라 변경은 dataflow 변경이다.
+
+**P5. Stage A 입력 레지스터.** 지금은 `rd_word_i` 와 `grf_blk_i` 를 PCU 안에서
+등록하지 않는다 — 2 cycle 동안 붙잡는 일은 bank 와 GRF 몫이고, 그 덕에 약
+684 FF (~4,000 um2) 를 아꼈다. 대가는 변환기와 8 개 PE 의 4:2 tree 가 전부
+primary input 에서 시작하는 조합 경로가 된다는 점이다. 두 가지 결과가 있다.
+
+- vectorless 전력 추정이 그 논리 전체를 가정 활성도 0.20 으로 때린다.
+  rabit 행 전력의 98.2 % 가 조합 논리로 잡히는 이유이고, p3llm (stage 0 에서
+  피연산자 등록) 과 전력을 나란히 놓을 수 없는 이유다.
+- 실제 실리콘에서도 bank/GRF 쪽 glitch 가 compressor tree 로 그대로 전파된다.
+
+입력을 등록하면 ~4,000 um2 가 늘어 49,000 um2 정도가 되는데 여전히 baseline
+(60,176) 아래다. 스펙에 없는 구조 변경이라 구현하지 않았고, 전력이 실제
+관심사가 되면 먼저 검토할 항목이다. 확정하려면 vectorless 가 아니라 동일
+자극(VCD) 기반 측정이 필요하다.

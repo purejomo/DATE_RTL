@@ -16,16 +16,31 @@ VERIF := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TESTS := fp16_mul int4fp16_mul int4bf16_mul \
          pcu_fp16_32 pcu_bf16_32 pcu_fp16_64 pcu_bf16_64 \
          p3llm_decoders p3llm_compressor p3llm_pe p3llm_pcu \
-         rabit_cvt rabit_pe rabit_acc rabit_pcu rabit_pcu_m10 rabit_pcu_noshift \
+         rabit_cvt rabit_align rabit_pe rabit_acc \
+         rabit_pcu rabit_pcu_m10 rabit_pcu_noshift rabit_pcu_m10_noshift \
+         rabit_fs rabit_fs_pipe rabit_fs_h16 \
          p3llm_dequant_arith p3llm_dequant
 
 .PHONY: all list distclean
+# cocotb's simulator wrapper exits 0 even when a testcase fails -- it reports the
+# failure in the JUnit XML and lets make carry on. Checking only the exit status
+# therefore prints "all tests passed" over a red regression, so every test is
+# also required to leave a results file with no <failure> element in it.
 all:
-	@for t in $(TESTS); do \
+	@failed=""; \
+	for t in $(TESTS); do \
 	    echo "=== $$t ==="; \
-	    $(MAKE) --no-print-directory TEST=$$t sim || exit 1; \
-	done
-	@echo "=== all $(words $(TESTS)) tests passed ==="
+	    $(MAKE) --no-print-directory TEST=$$t sim || failed="$$failed $$t"; \
+	    if [ ! -f $(VERIF)/build/$$t.xml ]; then \
+	        echo "!!! $$t produced no results file"; failed="$$failed $$t"; \
+	    elif grep -q '<failure' $(VERIF)/build/$$t.xml; then \
+	        echo "!!! $$t reported a failure"; failed="$$failed $$t"; \
+	    fi; \
+	done; \
+	if [ -n "$$failed" ]; then \
+	    echo "=== regression FAILED:$$failed ==="; exit 1; \
+	fi; \
+	echo "=== all $(words $(TESTS)) tests passed ==="
 
 list:
 	@printf '  %s\n' $(TESTS)
@@ -182,6 +197,13 @@ VERILOG_SOURCES := $(RTL)/5_rabit/rabit_cvt_fp16_blk.sv \
                    $(VERIF)/tests/harness/rabit_cvt_tb.sv
 endif
 
+ifeq ($(TEST),rabit_align)
+COCOTB_TOPLEVEL := rabit_align_tb
+MODULE          := test_rabit_align
+VERILOG_SOURCES := $(RTL)/5_rabit/rabit_align_shift.sv \
+                   $(VERIF)/tests/harness/rabit_align_tb.sv
+endif
+
 ifeq ($(TEST),rabit_pe)
 COCOTB_TOPLEVEL := rabit_pe
 MODULE          := test_rabit_pe
@@ -197,7 +219,7 @@ MODULE          := test_rabit_acc
 VERILOG_SOURCES := $(RTL)/5_rabit/rabit_acc_regfile.sv
 endif
 
-ifneq ($(filter $(TEST),rabit_pcu rabit_pcu_m10 rabit_pcu_noshift),)
+ifneq ($(filter $(TEST),rabit_pcu rabit_pcu_m10 rabit_pcu_noshift rabit_pcu_m10_noshift),)
 MODULE            := test_rabit_pcu
 COCOTB_TOPLEVEL   := $(TEST)
 RABIT_MANT_W      := $(if $(findstring m10,$(TEST)),10,12)
@@ -236,6 +258,15 @@ RABIT_FS_RTL := $(RABIT_BASE_RTL) \
 
 ifeq ($(TEST),rabit_fs)
 COCOTB_TOPLEVEL := rabit_pcu_fs
+MODULE          := test_rabit_fs_pcu
+VERILOG_SOURCES := $(RABIT_FS_RTL)
+EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS -DRABIT_FS_ASSERTIONS
+RABIT_FS_H_FMT  := 0
+export RABIT_FS_H_FMT
+endif
+
+ifeq ($(TEST),rabit_fs_pipe)
+COCOTB_TOPLEVEL := rabit_pcu_fs_p
 MODULE          := test_rabit_fs_pcu
 VERILOG_SOURCES := $(RABIT_FS_RTL)
 EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS -DRABIT_FS_ASSERTIONS

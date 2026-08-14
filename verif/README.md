@@ -9,7 +9,8 @@ verif/
 │   ├── float_reference.py       IEEE-754 FP16 / BF16 정확 모델
 │   ├── int4float_pcu_model.py   awq PCU 모델
 │   ├── p3llm_formats.py         p3llm FP8 / FP4 디코더 모델
-│   └── p3llm_pcu_model.py       p3llm PE · PCU 모델
+│   ├── p3llm_pcu_model.py       p3llm PE · PCU 모델
+│   └── rabit_model.py           rabit 변환 · PE · 누산기 · PCU 모델
 └── tests/
     ├── test_fp16_mul_lane.py        baseline
     ├── test_int4fp16_mul_lane.py    awq SIMD
@@ -18,8 +19,12 @@ verif/
     ├── test_p3llm_decoders.py       p3llm
     ├── test_p3llm_pe.py             p3llm
     ├── test_p3llm_pcu.py            p3llm
+    ├── test_rabit_cvt.py            rabit convert-on-write
+    ├── test_rabit_pe.py             rabit PE
+    ├── test_rabit_acc.py            rabit 누산기 배열
+    ├── test_rabit_pcu.py            rabit end-to-end GEMV
     ├── common.py                    cocotb 헬퍼
-    └── harness/                     디코더 · compressor 노출용 SV 래퍼
+    └── harness/                     디코더 · compressor · cvt 노출용 SV 래퍼
 fp32/                        binary32 누산 경로 (cocotb 없이 Verilator만)
 ├── Makefile
 ├── tb_top.v / main.cpp          HBM-PIM · AWQ binary32 가산기
@@ -54,17 +59,20 @@ make distclean          # 산출물 삭제
 | p3llm | `p3llm_compressor` | `compressor_tb` | 4:2 compressor의 sum/carry |
 | p3llm | `p3llm_pe` | `p3llm_pe` | PE 지시 시퀀스 |
 | p3llm | `p3llm_pcu` | `p3llm_pcu` | PCU 랜덤 타일 회귀 |
-
-`p3llm_pe`와 `p3llm_pcu`는 설계 자체의 SystemVerilog assertion을
-(`P3LLM_ASSERTIONS`) 켜고 돌린다. 출력이 우연히 맞아도 파이프라인 내부에서
-가정이 깨지면 실패한다.
+| rabit | `rabit_cvt` | `rabit_cvt_tb` | convert-on-write: RNE, subnormal, max-exp 경계. MANT_W 12/10 + SHIFTER_EN 0 동시 |
+| rabit | `rabit_align` | `rabit_align_tb` | 지수 정렬 shifter, shift 전 범위 (-64..63) x 경계 psum. truncate/RNE 두 모드 |
+| rabit | `rabit_pe` | `rabit_pe` | 부호 조합 전수, one-hot lane, shift·saturation 경계 |
+| rabit | `rabit_acc` | `rabit_acc_regfile` | slot 격리, clear, read-modify-write 순서, reset |
+| rabit | `rabit_pcu` | `rabit_pcu` | end-to-end GEMV (64 x 4096), 정확한 유리수 reference 대조 |
+| rabit | `rabit_pcu_m10` | `rabit_pcu_m10` | 같은 것, MANT_W 10 |
+| rabit | `rabit_pcu_noshift` | `rabit_pcu_noshift` | 같은 것, SHIFTER_EN 0 |
+| rabit | `rabit_pcu_m10_noshift` | `rabit_pcu_m10_noshift` | 같은 것, 두 노브 동시 |
+| rabit-fs | `rabit_fs` | `rabit_pcu_fs` | full-scale variant: h·x를 PCU에서 곱하고 g 역양자화까지 수행, 최종 binary16 y를 bit-정합 대조 |
+| rabit-fs | `rabit_fs_pipe` | `rabit_pcu_fs_p` | 같은 것, `H_MUL_PIPE = 1` (곱셈기와 convert 사이에 레지스터, tCCD_S 충족) |
+| rabit-fs | `rabit_fs_h16` | `rabit_pcu_fs_h16` | 같은 것, `H_FMT = FP16_3WR` (chunk당 WR 3개) |
 
 ## binary32 누산 경로 (`verif/fp32`)
-
-SIMD 행에 붙인 누산기는 cocotb가 아니라 Verilator + C++ 로 검증한다. HBM과
-AWQ 모두 finite 입력에 대해 subnormal 입력을 signed zero로 바꾸고(DAZ), 호스트
-RNE 결과가 subnormal이면 signed zero로 flush(FTZ)한 oracle과 비교한다. 의존성은
-Verilator와 C++ 컴파일러뿐이라 cocotb 없이 돌아간다.
+.
 
 ```bash
 cd verif/fp32 && make
@@ -75,11 +83,6 @@ cd verif/fp32 && make
 | HBM-PIM binary32 add | `hbmpim_fp32_add` | 지원 finite 코너 + DAZ/FTZ 랜덤 |
 | AWQ binary32 add | `awq_fp32_add` | 지원 finite 코너 + DAZ/FTZ 랜덤 |
 | 내부 형식 변환 · MAC 파이프라인 | `hbmpim_fp16_mac_1_lane`, `awq_int4bf16_mac_1_lane`, `awq_int4fp16_mac_1_lane` | 300,000 사이클 |
-
-독립 `float16_to_fp32` 모듈은 더 이상 없다. binary16/bfloat16→binary32 변환은 각
-MAC lane 내부에 있으며, 마지막 항목에서 곱셈기 결과 tap을 호스트 변환 모델로
-넓힌 값과 비교한다. 이 검사는 4단 스테이지 정렬과 `acc_clear`/`acc_enable` 의미도
-bubble이 섞인 랜덤 스트림으로 함께 확인한다.
 
 
 ## 규모 조절
@@ -93,7 +96,12 @@ bubble이 섞인 랜덤 스트림으로 함께 확인한다.
 | `PCU_ITERS` | awq PCU 타일 수 | `4000` |
 | `P3LLM_RANDOM_TILES` | p3llm PCU 타일 수 | `10000` |
 | `FP16_MUL_RANDOM_PAIRS` | baseline multiplier 랜덤 쌍 | `200000` |
+| `RABIT_GEMV_DOUT` / `RABIT_GEMV_DIN` | rabit end-to-end GEMV 크기 | `64` / `4096` |
+| `RABIT_SEEDS` | rabit GEMV 시드 목록 | `1,2,3` |
+| `RABIT_CVT_ITERS` / `RABIT_PE_ITERS` / `RABIT_ACC_ITERS` | rabit 랜덤 반복 | `4000` / `3000` / `2000` |
+| `RABIT_FS_PROBLEMS` / `RABIT_FS_SEED` | rabit full-scale 문제 수 / 시드 | `4` / `20260814` |
 
 ```bash
 INT4BF16_EXHAUSTIVE=0 PCU_ITERS=300 P3LLM_RANDOM_TILES=200 make   # 빠른 확인
+RABIT_GEMV_DIN=1024 make TEST=rabit_pcu                           # rabit만 짧게
 ```

@@ -145,8 +145,17 @@ def sweep_one(
         num_p += (y_hat - y_exact) ** 2
         den_p += y_exact * y_exact
 
+    # The mean alignment shift is the explanatory variable for the truncating
+    # configurations: the arithmetic right shift floors, so every chunk biases
+    # the accumulator the same way and the total grows with both the chunk
+    # count and this depth. Round-to-nearest flattens it.
+    mean_shift = sum(
+        e0 - block.e_ent for path in blocks for block in path
+    ) / (NPATH * len(blocks[0]))
+
     return {
         "e0": e0,
+        "shift": mean_shift,
         "quant": math.sqrt(num_q / den_q) if den_q else 0.0,
         "pcu": math.sqrt(num_p / den_p) if den_p else 0.0,
         "sat": sat,
@@ -181,13 +190,16 @@ def main(argv=None) -> int:
         shapes.append((int(dout), int(din)))
     seeds = [int(s) for s in args.seeds.split(",")]
 
-    print("| shape | config | E0 | PCU rel err | quantization rel err | sat |")
-    print("|---|---|---:|---:|---:|:--:|")
+    print(
+        "| shape | config | mean(E0-e_ent) | PCU rel err (mean) | "
+        "PCU rel err (worst seed) | quantization rel err | sat |"
+    )
+    print("|---|---|---:|---:|---:|---:|:--:|")
     for dout, din in shapes:
         for label, mant_w, shifter_en, shift_rnd in CONFIGS:
             pcu_errs = []
             quant_errs = []
-            e0 = 0
+            shifts = []
             sat = False
             for seed in seeds:
                 result = sweep_one(
@@ -201,18 +213,36 @@ def main(argv=None) -> int:
                 )
                 pcu_errs.append(result["pcu"])
                 quant_errs.append(result["quant"])
-                e0 = result["e0"]
+                shifts.append(result["shift"])
                 sat = sat or result["sat"]
             print(
-                f"| {dout}x{din} | {label} | {e0} | "
+                f"| {dout}x{din} | {label} | "
+                f"{sum(shifts)/len(shifts):.2f} | "
                 f"{sum(pcu_errs)/len(pcu_errs):.3e} | "
+                f"{max(pcu_errs):.3e} | "
                 f"{sum(quant_errs)/len(quant_errs):.3e} | "
                 f"{'yes' if sat else 'no'} |"
             )
     print()
     print(
         f"{len(seeds)} seeds x {args.rows} sampled output rows per cell; "
-        "errors are L2-relative, averaged over seeds."
+        "errors are L2-relative."
+    )
+    print()
+    print(
+        "The worst-seed column is the one to read for the truncating rows: the "
+        "arithmetic right shift floors, so its error is a one-sided bias that "
+        "grows with mean(E0-e_ent). The `+ RNE` row shows what removing that "
+        "bias would buy (proposal P1 in docs/rabit_pcu_spec.md); it is not the "
+        "delivered default."
+    )
+    print()
+    print(
+        "These rows hold h = 1 (see _fit_row), which keeps the block exponents "
+        "close together. Trained per-input-channel h spreads them further and "
+        "pushes E0 up, so the truncating rows get worse while the RNE row does "
+        "not: the RTL regression, whose stimulus comes from the packer's fitted "
+        "h, sees 7.6e-4 to 3.8e-3 at MANT_W 12 for exactly this reason."
     )
     return 0
 
