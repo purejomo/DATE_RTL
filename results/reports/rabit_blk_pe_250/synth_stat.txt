@@ -1,0 +1,63 @@
+
+19. Printing statistics.
+
+=== rabit_blk_pe ===
+
+   Number of wires:               3760
+   Number of wire bits:           4050
+   Number of public wires:          27
+   Number of public wire bits:     317
+   Number of ports:                 10
+   Number of port bits:            300
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:               3767
+     AND2_X1                        27
+     AND2_X2                         3
+     AND3_X1                         4
+     AND4_X1                         1
+     AOI21_X1                      103
+     AOI21_X2                       19
+     AOI22_X1                        1
+     AOI22_X2                        1
+     BUF_X1                         14
+     BUF_X2                         14
+     BUF_X4                         13
+     BUF_X8                         11
+     CLKBUF_X1                       4
+     CLKBUF_X2                       1
+     DFF_X1                         17
+     INV_X1                        781
+     INV_X2                         33
+     INV_X4                          1
+     MUX2_X1                         9
+     NAND2_X1                     1311
+     NAND2_X2                      230
+     NAND2_X4                       28
+     NAND3_X1                      337
+     NAND3_X2                       49
+     NAND4_X1                        5
+     NAND4_X2                        2
+     NOR2_X1                        86
+     NOR2_X2                        22
+     NOR2_X4                         6
+     NOR3_X1                         3
+     NOR4_X1                         2
+     OAI211_X2                       1
+     OAI21_X1                      230
+     OAI21_X2                        5
+     OAI221_X1                      10
+     OAI22_X1                        2
+     OR2_X1                         53
+     OR2_X2                         16
+     OR2_X4                          3
+     OR4_X1                          1
+     XNOR2_X1                      269
+     XNOR2_X2                       19
+     XOR2_X1                        15
+     XOR2_X2                         5
+
+   Chip area for module '\rabit_blk_pe': 3693.410000
+     of which used for sequential elements: 76.874000 (2.08%)
+

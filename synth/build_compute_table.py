@@ -92,6 +92,11 @@ ROWS = [
      "int4bf16_pcu_top_pcu500",  64, 16, 64, 500, True),
     ("p3llm",   "FP4/FP8",   "P3-LLM PCU",  64,
      "p3llm_pcu_500",            64, 16, 64, 500, True),
+    # Same 64-MAC raw PCU plus one time-multiplexed dequant pipeline.  The
+    # shared scale multipliers are metadata/post-processing hardware and do not
+    # increase the accepted low-precision GEMV MAC count.
+    ("p3llm",   "FP4/FP8->FP16", "P3-LLM PCU+DQ", 64,
+     "p3llm_pcu_dequant_500",    64, 16, 64, 500, True),
 ]
 
 

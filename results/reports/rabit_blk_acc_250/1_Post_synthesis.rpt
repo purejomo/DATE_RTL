@@ -1,0 +1,192 @@
+
+==========================================================================
+Post synthesis report_tns
+--------------------------------------------------------------------------
+tns 0.00
+
+==========================================================================
+Post synthesis report_wns
+--------------------------------------------------------------------------
+wns 0.00
+
+==========================================================================
+Post synthesis report_worst_slack
+--------------------------------------------------------------------------
+worst slack 2.18
+
+==========================================================================
+Post synthesis report_checks -path_delay min
+--------------------------------------------------------------------------
+Startpoint: u_acc.slot[7][95]$_SDFFCE_PN0P_
+            (rising edge-triggered flip-flop clocked by core_clock)
+Endpoint: u_acc.slot[7][95]$_SDFFCE_PN0P_
+          (rising edge-triggered flip-flop clocked by core_clock)
+Path Group: core_clock
+Path Type: min
+
+Fanout     Cap    Slew   Delay    Time   Description
+-----------------------------------------------------------------------------
+                  0.00    0.00    0.00   clock core_clock (rise edge)
+                          0.00    0.00   clock network delay (ideal)
+                  0.00    0.00    0.00 ^ u_acc.slot[7][95]$_SDFFCE_PN0P_/CK (DFF_X1)
+     2    2.99    0.01    0.08    0.08 v u_acc.slot[7][95]$_SDFFCE_PN0P_/Q (DFF_X1)
+                                         u_acc.slot[7][95] (net)
+                  0.01    0.00    0.08 v _20992_/A3 (NAND3_X1)
+     1    1.60    0.01    0.02    0.10 ^ _20992_/ZN (NAND3_X1)
+                                         _02167_ (net)
+                  0.01    0.00    0.10 ^ _20994_/A1 (NAND2_X1)
+     1    1.06    0.01    0.01    0.11 v _20994_/ZN (NAND2_X1)
+                                         _01581_ (net)
+                  0.01    0.00    0.11 v u_acc.slot[7][95]$_SDFFCE_PN0P_/D (DFF_X1)
+                                  0.11   data arrival time
+
+                  0.00    0.00    0.00   clock core_clock (rise edge)
+                          0.00    0.00   clock network delay (ideal)
+                          0.00    0.00   clock reconvergence pessimism
+                                  0.00 ^ u_acc.slot[7][95]$_SDFFCE_PN0P_/CK (DFF_X1)
+                          0.00    0.00   library hold time
+                                  0.00   data required time
+-----------------------------------------------------------------------------
+                                  0.00   data required time
+                                 -0.11   data arrival time
+-----------------------------------------------------------------------------
+                                  0.11   slack (MET)
+
+
+
+==========================================================================
+Post synthesis report_checks -path_delay max
+--------------------------------------------------------------------------
+Startpoint: rd_sel_i[0] (input port clocked by core_clock)
+Endpoint: rd_data_o[10] (output port clocked by core_clock)
+Path Group: core_clock
+Path Type: max
+
+Fanout     Cap    Slew   Delay    Time   Description
+-----------------------------------------------------------------------------
+                  0.00    0.00    0.00   clock core_clock (rise edge)
+                          0.00    0.00   clock network delay (ideal)
+                          0.80    0.80 v input external delay
+     1    3.00    0.00    0.00    0.80 v rd_sel_i[0] (in)
+                                         rd_sel_i[0] (net)
+                  0.00    0.00    0.80 v _22541_/A (BUF_X4)
+     8   15.48    0.01    0.02    0.82 v _22541_/Z (BUF_X4)
+                                         _03249_ (net)
+                  0.01    0.00    0.82 v _22542_/A (INV_X2)
+     7   14.08    0.02    0.03    0.85 ^ _22542_/ZN (INV_X2)
+                                         _03250_ (net)
+                  0.02    0.00    0.85 ^ _22570_/A (BUF_X4)
+    10   24.28    0.02    0.03    0.88 ^ _22570_/Z (BUF_X4)
+                                         _03278_ (net)
+                  0.02    0.00    0.88 ^ _22596_/A (BUF_X4)
+    10   20.32    0.01    0.03    0.92 ^ _22596_/Z (BUF_X4)
+                                         _03303_ (net)
+                  0.01    0.00    0.92 ^ _22856_/A (BUF_X2)
+    10   15.99    0.02    0.04    0.96 ^ _22856_/Z (BUF_X2)
+                                         _03553_ (net)
+                  0.02    0.00    0.96 ^ _22858_/A1 (NAND2_X1)
+     1    1.56    0.01    0.02    0.97 v _22858_/ZN (NAND2_X1)
+                                         _03555_ (net)
+                  0.01    0.00    0.97 v _22861_/A1 (NAND3_X1)
+     1    1.60    0.01    0.02    0.99 ^ _22861_/ZN (NAND3_X1)
+                                         _03558_ (net)
+                  0.01    0.00    0.99 ^ _22867_/A1 (NAND2_X1)
+     1    1.53    0.01    0.01    1.00 v _22867_/ZN (NAND2_X1)
+                                         _03564_ (net)
+                  0.01    0.00    1.00 v _22868_/A1 (NAND2_X1)
+     1    1.60    0.01    0.01    1.01 ^ _22868_/ZN (NAND2_X1)
+                                         _03565_ (net)
+                  0.01    0.00    1.01 ^ _22880_/A1 (NAND2_X1)
+     1    0.00    0.01    0.01    1.02 v _22880_/ZN (NAND2_X1)
+                                         rd_data_o[10] (net)
+                  0.01    0.00    1.02 v rd_data_o[10] (out)
+                                  1.02   data arrival time
+
+                  0.00    4.00    4.00   clock core_clock (rise edge)
+                          0.00    4.00   clock network delay (ideal)
+                          0.00    4.00   clock reconvergence pessimism
+                         -0.80    3.20   output external delay
+                                  3.20   data required time
+-----------------------------------------------------------------------------
+                                  3.20   data required time
+                                 -1.02   data arrival time
+-----------------------------------------------------------------------------
+                                  2.18   slack (MET)
+
+
+
+==========================================================================
+Post synthesis report_checks -unconstrained
+--------------------------------------------------------------------------
+Startpoint: rd_sel_i[0] (input port clocked by core_clock)
+Endpoint: rd_data_o[10] (output port clocked by core_clock)
+Path Group: core_clock
+Path Type: max
+
+Fanout     Cap    Slew   Delay    Time   Description
+-----------------------------------------------------------------------------
+                  0.00    0.00    0.00   clock core_clock (rise edge)
+                          0.00    0.00   clock network delay (ideal)
+                          0.80    0.80 v input external delay
+     1    3.00    0.00    0.00    0.80 v rd_sel_i[0] (in)
+                                         rd_sel_i[0] (net)
+                  0.00    0.00    0.80 v _22541_/A (BUF_X4)
+     8   15.48    0.01    0.02    0.82 v _22541_/Z (BUF_X4)
+                                         _03249_ (net)
+                  0.01    0.00    0.82 v _22542_/A (INV_X2)
+     7   14.08    0.02    0.03    0.85 ^ _22542_/ZN (INV_X2)
+                                         _03250_ (net)
+                  0.02    0.00    0.85 ^ _22570_/A (BUF_X4)
+    10   24.28    0.02    0.03    0.88 ^ _22570_/Z (BUF_X4)
+                                         _03278_ (net)
+                  0.02    0.00    0.88 ^ _22596_/A (BUF_X4)
+    10   20.32    0.01    0.03    0.92 ^ _22596_/Z (BUF_X4)
+                                         _03303_ (net)
+                  0.01    0.00    0.92 ^ _22856_/A (BUF_X2)
+    10   15.99    0.02    0.04    0.96 ^ _22856_/Z (BUF_X2)
+                                         _03553_ (net)
+                  0.02    0.00    0.96 ^ _22858_/A1 (NAND2_X1)
+     1    1.56    0.01    0.02    0.97 v _22858_/ZN (NAND2_X1)
+                                         _03555_ (net)
+                  0.01    0.00    0.97 v _22861_/A1 (NAND3_X1)
+     1    1.60    0.01    0.02    0.99 ^ _22861_/ZN (NAND3_X1)
+                                         _03558_ (net)
+                  0.01    0.00    0.99 ^ _22867_/A1 (NAND2_X1)
+     1    1.53    0.01    0.01    1.00 v _22867_/ZN (NAND2_X1)
+                                         _03564_ (net)
+                  0.01    0.00    1.00 v _22868_/A1 (NAND2_X1)
+     1    1.60    0.01    0.01    1.01 ^ _22868_/ZN (NAND2_X1)
+                                         _03565_ (net)
+                  0.01    0.00    1.01 ^ _22880_/A1 (NAND2_X1)
+     1    0.00    0.01    0.01    1.02 v _22880_/ZN (NAND2_X1)
+                                         rd_data_o[10] (net)
+                  0.01    0.00    1.02 v rd_data_o[10] (out)
+                                  1.02   data arrival time
+
+                  0.00    4.00    4.00   clock core_clock (rise edge)
+                          0.00    4.00   clock network delay (ideal)
+                          0.00    4.00   clock reconvergence pessimism
+                         -0.80    3.20   output external delay
+                                  3.20   data required time
+-----------------------------------------------------------------------------
+                                  3.20   data required time
+                                 -1.02   data arrival time
+-----------------------------------------------------------------------------
+                                  2.18   slack (MET)
+
+
+
+==========================================================================
+Post synthesis report_power
+--------------------------------------------------------------------------
+Group                  Internal  Switching    Leakage      Total
+                          Power      Power      Power      Power (Watts)
+----------------------------------------------------------------
+Sequential             3.58e-03   4.12e-05   1.57e-04   3.77e-03  79.4%
+Combinational          3.16e-04   3.83e-04   2.81e-04   9.80e-04  20.6%
+Clock                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Macro                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Pad                    0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+----------------------------------------------------------------
+Total                  3.89e-03   4.24e-04   4.38e-04   4.75e-03 100.0%
+                          81.9%       8.9%       9.2%

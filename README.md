@@ -30,7 +30,7 @@ DATE_RTL/
 │   └── 4_p3llm/           FP4 x FP8 PCU
 ├── synth/                 합성 · 전력 · 표 생성 스크립트
 ├── verif/                 golden model 및 cocotb 테스트
-│   └── fp32/              binary32 누산 경로 Verilator 검증 (cocotb 불필요)
+│   └── fp32/              binary32 누산 경로 Verilator 검증
 └── results/               면적 · 타이밍 · 전력 리포트, 최종 표
 ```
 
@@ -78,13 +78,6 @@ python3 build_comparison_22nm.py  # 공통 결과에서 22nm 비교표만 재생
   16/32/64 MAC/cycle이다.
 - `add`는 RTL의 `+` 토큰 수가 아니라 **architectural accumulator lane 수**다.
   SIMD는 multiplier당 하나, 8/16-PE P3-LLM PCU는 8/16개다.
-
-**22nm**
-- `results/comparison_22nm.csv`의 면적과 power는 Nangate45 합성값을 각각
-  4.545와 1.625로 나눈 투영값
-- `pJ/MAC`은 45nm 연산 에너지를 2.100으로 나눈 별도 투영값이다. 이 계수에는
-  node speed-up 가정이 포함되므로, 표에 유지한 목표 MHz/GMAC/s와 투영 power만
-  다시 나누어 얻는 값과는 일치하지 않는다.
 
 ---
 

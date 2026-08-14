@@ -1,0 +1,78 @@
+
+19. Printing statistics.
+
+=== p3llm_pcu_dequant ===
+
+   Number of wires:              92184
+   Number of wire bits:          94127
+   Number of public wires:        5651
+   Number of public wire bits:    7594
+   Number of ports:                 28
+   Number of port bits:           1971
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              86514
+     AND2_X1                       792
+     AND2_X2                        13
+     AND2_X4                         1
+     AND3_X1                       296
+     AND3_X2                         1
+     AND4_X1                        18
+     AOI21_X1                     7085
+     AOI21_X2                       79
+     AOI21_X4                       22
+     AOI22_X1                      171
+     BUF_X1                       3693
+     BUF_X16                        32
+     BUF_X2                        237
+     BUF_X32                         6
+     BUF_X4                        165
+     BUF_X8                         73
+     CLKBUF_X1                     833
+     CLKBUF_X2                       8
+     CLKBUF_X3                      26
+     DFF_X1                       6930
+     INV_X1                      11205
+     INV_X2                         78
+     INV_X32                         1
+     INV_X4                         27
+     INV_X8                          5
+     MUX2_X1                       431
+     MUX2_X2                         3
+     NAND2_X1                    17768
+     NAND2_X2                      200
+     NAND2_X4                       80
+     NAND3_X1                     4337
+     NAND3_X2                       20
+     NAND3_X4                        3
+     NAND4_X1                      373
+     NAND4_X2                        4
+     NOR2_X1                      7378
+     NOR2_X2                        82
+     NOR2_X4                        31
+     NOR3_X1                       779
+     NOR3_X2                         5
+     NOR3_X4                         1
+     NOR4_X1                       308
+     NOR4_X2                         1
+     OAI211_X2                       1
+     OAI21_X1                    10964
+     OAI21_X2                       58
+     OAI21_X4                       11
+     OAI221_X1                     868
+     OAI22_X1                     2374
+     OR2_X1                       2824
+     OR2_X2                         20
+     OR2_X4                          5
+     OR3_X1                        102
+     OR3_X2                          6
+     OR4_X1                         16
+     XNOR2_X1                     4944
+     XNOR2_X2                       56
+     XOR2_X1                       654
+     XOR2_X2                        10
+
+   Chip area for module '\p3llm_pcu_dequant': 108067.554000
+     of which used for sequential elements: 31337.460000 (29.00%)
+

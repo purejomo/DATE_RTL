@@ -78,6 +78,26 @@ P3LLM_SOURCES=(
     "${RTL}/4_p3llm/compressor_4to2.sv"
 )
 
+# P3-LLM with one PCU-shared post-accumulator dequantization pipeline.  Keep
+# this source set separate from the paper baseline: both directories define the
+# same raw p3llm_* modules, while only this set adds the fixed32/FP scale path,
+# cross-group FP32 state, and final FP16 output packing.
+P3LLM_DEQUANT_SOURCES=(
+    "${RTL}/4_p3llm_with_dequant/p3llm_pkg.sv"
+    "${RTL}/4_p3llm_with_dequant/p3llm_pcu.sv"
+    "${RTL}/4_p3llm_with_dequant/p3llm_pe.sv"
+    "${RTL}/4_p3llm_with_dequant/fixed_mul_shift.sv"
+    "${RTL}/4_p3llm_with_dequant/fp8_e4m3_decoder.sv"
+    "${RTL}/4_p3llm_with_dequant/fp8_s0e4m4_decoder.sv"
+    "${RTL}/4_p3llm_with_dequant/bitmod4_decoder.sv"
+    "${RTL}/4_p3llm_with_dequant/int4_asym_decoder.sv"
+    "${RTL}/4_p3llm_with_dequant/compressor_4to2.sv"
+    "${RTL}/4_p3llm_with_dequant/p3llm_dequant_fixed32_fp16_mul_pipe.sv"
+    "${RTL}/4_p3llm_with_dequant/p3llm_dequant_fp32_add_pipe.sv"
+    "${RTL}/4_p3llm_with_dequant/p3llm_dequant_fp32_fp16_mul_pack_pipe.sv"
+    "${RTL}/4_p3llm_with_dequant/p3llm_pcu_dequant.sv"
+)
+
 # label : top : clock period (ns) : source set
 ROWS=(
     "compute_hbmpim_250      : hbmpim_fp16_pcu_16_lane       : 4.0 : hbmpim_simd"
@@ -92,6 +112,7 @@ ROWS=(
     "int4fp16_pcu_top_pcu500 : int4fp16_pcu_top     : 2.0 : pcu16"
     "int4bf16_pcu_top_pcu500 : int4bf16_pcu_top     : 2.0 : pcu16"
     "p3llm_pcu_500           : p3llm_pcu            : 2.0 : p3llm"
+    "p3llm_pcu_dequant_500   : p3llm_pcu_dequant    : 2.0 : p3llm_dequant"
 )
 
 field() { echo "$1" | cut -d: -f"$2" | tr -d ' '; }
@@ -103,6 +124,7 @@ sources_for() {
         pcu8)        printf '%s\n' "${PCU8_SOURCES[@]}" ;;
         pcu16)       printf '%s\n' "${PCU16_SOURCES[@]}" ;;
         p3llm)       printf '%s\n' "${P3LLM_SOURCES[@]}" ;;
+        p3llm_dequant) printf '%s\n' "${P3LLM_DEQUANT_SOURCES[@]}" ;;
     esac
 }
 

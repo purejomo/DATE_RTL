@@ -11,3 +11,12 @@ int4bf16_pcu32_500,int4bf16_pcu32,37261.280000,32448,1566,2.0
 int4fp16_pcu_top_pcu500,int4fp16_pcu_top,82535.544000,72372,3354,2.0
 int4bf16_pcu_top_pcu500,int4bf16_pcu_top,71745.254000,62010,3054,2.0
 p3llm_pcu_500,p3llm_pcu,71287.202000,61847,2594,2.0
+p3llm_pcu_dequant_500,p3llm_pcu_dequant,108067.554000,86514,6930,2.0
+rabit_pcu_250,rabit_pcu,45253.516000,37126,2208,4.0
+rabit_pcu_500,rabit_pcu,45253.516000,37126,2208,2.0
+rabit_pcu_m10_250,rabit_pcu_m10,42096.628000,34727,2192,4.0
+rabit_pcu_noshift_250,rabit_pcu_noshift,45776.738000,39352,2200,4.0
+rabit_pcu_m10_noshift_250,rabit_pcu_m10_noshift,44348.850000,36390,2184,4.0
+rabit_blk_cvt_250,rabit_blk_cvt,5002.130000,4956,0,4.0
+rabit_blk_pe_250,rabit_blk_pe,3693.410000,3767,17,4.0
+rabit_blk_acc_250,rabit_blk_acc,20871.690000,15694,2048,4.0

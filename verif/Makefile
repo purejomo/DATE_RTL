@@ -12,10 +12,12 @@
 RTL   := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../rtl)
 VERIF := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-# 논문 4개 행을 모두 덮는다: baseline lane, awq lane, awq PCU, p3llm PCU.
+# 논문 5개 행을 모두 덮는다: baseline lane, awq lane, awq PCU, p3llm PCU, rabit PCU.
 TESTS := fp16_mul int4fp16_mul int4bf16_mul \
          pcu_fp16_32 pcu_bf16_32 pcu_fp16_64 pcu_bf16_64 \
-         p3llm_decoders p3llm_compressor p3llm_pe p3llm_pcu
+         p3llm_decoders p3llm_compressor p3llm_pe p3llm_pcu \
+         rabit_cvt rabit_pe rabit_acc rabit_pcu rabit_pcu_m10 rabit_pcu_noshift \
+         p3llm_dequant_arith p3llm_dequant
 
 .PHONY: all list distclean
 all:
@@ -124,6 +126,130 @@ MODULE          := test_p3llm_pcu
 TESTCASE        := test_pcu_regression
 VERILOG_SOURCES := $(P3LLM_RTL) $(RTL)/4_p3llm/p3llm_pcu.sv
 EXTRA_ARGS      += --assert -DP3LLM_ASSERTIONS
+endif
+
+P3LLM_DEQUANT_DIR := $(RTL)/4_p3llm_with_dequant
+P3LLM_DEQUANT_RTL := $(P3LLM_DEQUANT_DIR)/p3llm_pkg.sv \
+                     $(P3LLM_DEQUANT_DIR)/fp8_e4m3_decoder.sv \
+                     $(P3LLM_DEQUANT_DIR)/fp8_s0e4m4_decoder.sv \
+                     $(P3LLM_DEQUANT_DIR)/bitmod4_decoder.sv \
+                     $(P3LLM_DEQUANT_DIR)/int4_asym_decoder.sv \
+                     $(P3LLM_DEQUANT_DIR)/fixed_mul_shift.sv \
+                     $(P3LLM_DEQUANT_DIR)/compressor_4to2.sv \
+                     $(P3LLM_DEQUANT_DIR)/p3llm_pe.sv \
+                     $(P3LLM_DEQUANT_DIR)/p3llm_pcu.sv \
+                     $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fixed32_fp16_mul_pipe.sv \
+                     $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_add_pipe.sv \
+                     $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_fp16_mul_pack_pipe.sv \
+                     $(P3LLM_DEQUANT_DIR)/p3llm_pcu_dequant.sv
+
+ifeq ($(TEST),p3llm_dequant_arith)
+COCOTB_TOPLEVEL := p3llm_dequant_arith_tb
+MODULE          := test_p3llm_dequant_arith
+TESTCASE        := test_dequant_arithmetic_boundaries
+VERILOG_SOURCES := $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fixed32_fp16_mul_pipe.sv \
+                   $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_add_pipe.sv \
+                   $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_fp16_mul_pack_pipe.sv \
+                   $(VERIF)/tests/harness/p3llm_dequant_arith_tb.sv
+endif
+
+ifeq ($(TEST),p3llm_dequant)
+COCOTB_TOPLEVEL := p3llm_pcu_dequant
+MODULE          := test_p3llm_pcu_dequant
+TESTCASE        := test_pcu_dequant_all_modes
+VERILOG_SOURCES := $(P3LLM_DEQUANT_RTL)
+EXTRA_ARGS      += --assert -DP3LLM_ASSERTIONS
+endif
+
+# --- RaBiT: convert-on-write, PE, accumulator array, whole PCU -------------
+#
+# rabit_pcu* 는 설계의 SystemVerilog assertion (RABIT_ASSERTIONS) 을 켜고 돈다.
+# 입력 GRF / CRF / bank / NPU 는 합성 범위 밖이라 testbench 의 behavioral model
+# 로만 존재하고, stimulus 는 tools/pack_rabit.py 가 만든 실제 word stream 이다.
+
+RABIT_RTL := $(RTL)/5_rabit/rabit_compressor_4to2.sv \
+             $(RTL)/5_rabit/rabit_cvt_fp16_blk.sv \
+             $(RTL)/5_rabit/rabit_align_shift.sv \
+             $(RTL)/5_rabit/rabit_pe.sv \
+             $(RTL)/5_rabit/rabit_acc_regfile.sv \
+             $(RTL)/5_rabit/rabit_pcu_ctrl.sv \
+             $(RTL)/5_rabit/rabit_pcu_top.sv
+
+ifeq ($(TEST),rabit_cvt)
+COCOTB_TOPLEVEL := rabit_cvt_tb
+MODULE          := test_rabit_cvt
+VERILOG_SOURCES := $(RTL)/5_rabit/rabit_cvt_fp16_blk.sv \
+                   $(VERIF)/tests/harness/rabit_cvt_tb.sv
+endif
+
+ifeq ($(TEST),rabit_pe)
+COCOTB_TOPLEVEL := rabit_pe
+MODULE          := test_rabit_pe
+VERILOG_SOURCES := $(RTL)/5_rabit/rabit_compressor_4to2.sv \
+                   $(RTL)/5_rabit/rabit_align_shift.sv \
+                   $(RTL)/5_rabit/rabit_pe.sv
+EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS
+endif
+
+ifeq ($(TEST),rabit_acc)
+COCOTB_TOPLEVEL := rabit_acc_regfile
+MODULE          := test_rabit_acc
+VERILOG_SOURCES := $(RTL)/5_rabit/rabit_acc_regfile.sv
+endif
+
+ifneq ($(filter $(TEST),rabit_pcu rabit_pcu_m10 rabit_pcu_noshift),)
+MODULE            := test_rabit_pcu
+COCOTB_TOPLEVEL   := $(TEST)
+RABIT_MANT_W      := $(if $(findstring m10,$(TEST)),10,12)
+RABIT_SHIFTER_EN  := $(if $(findstring noshift,$(TEST)),0,1)
+VERILOG_SOURCES   := $(RABIT_RTL) $(RTL)/5_rabit/rabit_pcu_synth.sv
+EXTRA_ARGS        += --assert -DRABIT_ASSERTIONS
+export RABIT_MANT_W RABIT_SHIFTER_EN
+endif
+
+# --- RaBiT full-scale PCU -------------------------------------------------
+#
+# rtl/5_rabit holds the base variant and rtl/5_rabit_fullsacle the full-scale
+# one. The full-scale top reuses the base modules rather than copying them, so
+# both directories are compiled together and sv2v/Verilator see one definition
+# of each shared module. rabit_fs_h16 is the same design with H_FMT = FP16_3WR,
+# which changes the write schedule -- the testbench's stimulus generator picks
+# it up from RABIT_FS_H_FMT.
+
+RABIT_BASE_RTL := $(RTL)/5_rabit/rabit_compressor_4to2.sv \
+                  $(RTL)/5_rabit/rabit_align_shift.sv \
+                  $(RTL)/5_rabit/rabit_pe.sv \
+                  $(RTL)/5_rabit/rabit_cvt_fp16_blk.sv \
+                  $(RTL)/5_rabit/rabit_acc_regfile.sv \
+                  $(RTL)/5_rabit/rabit_pcu_ctrl.sv
+
+RABIT_FS_RTL := $(RABIT_BASE_RTL) \
+                $(RTL)/5_rabit_fullsacle/rabit_fs_fp16_pack.sv \
+                $(RTL)/5_rabit_fullsacle/rabit_fs_h_scale_unit.sv \
+                $(RTL)/5_rabit_fullsacle/rabit_fs_g_buffer.sv \
+                $(RTL)/5_rabit_fullsacle/rabit_fs_dq_lane.sv \
+                $(RTL)/5_rabit_fullsacle/rabit_fs_dq_add.sv \
+                $(RTL)/5_rabit_fullsacle/rabit_fs_dq_unit.sv \
+                $(RTL)/5_rabit_fullsacle/rabit_fs_drain_seq.sv \
+                $(RTL)/5_rabit_fullsacle/rabit_pcu_fs_top.sv \
+                $(RTL)/5_rabit_fullsacle/rabit_pcu_fs_synth.sv
+
+ifeq ($(TEST),rabit_fs)
+COCOTB_TOPLEVEL := rabit_pcu_fs
+MODULE          := test_rabit_fs_pcu
+VERILOG_SOURCES := $(RABIT_FS_RTL)
+EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS -DRABIT_FS_ASSERTIONS
+RABIT_FS_H_FMT  := 0
+export RABIT_FS_H_FMT
+endif
+
+ifeq ($(TEST),rabit_fs_h16)
+COCOTB_TOPLEVEL := rabit_pcu_fs_h16
+MODULE          := test_rabit_fs_pcu
+VERILOG_SOURCES := $(RABIT_FS_RTL)
+EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS -DRABIT_FS_ASSERTIONS
+RABIT_FS_H_FMT  := 1
+export RABIT_FS_H_FMT
 endif
 
 ifndef COCOTB_TOPLEVEL

@@ -1,0 +1,72 @@
+
+19. Printing statistics.
+
+=== rabit_pcu_m10 ===
+
+   Number of wires:              36493
+   Number of wire bits:          37814
+   Number of public wires:        2213
+   Number of public wire bits:    3534
+   Number of ports:                 28
+   Number of port bits:           1349
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              34727
+     AND2_X1                       319
+     AND2_X2                         7
+     AND3_X1                        40
+     AND3_X2                         1
+     AND4_X1                         2
+     AOI21_X1                     1600
+     AOI21_X2                       44
+     AOI21_X4                        9
+     AOI22_X1                       26
+     BUF_X1                        490
+     BUF_X16                         5
+     BUF_X2                        446
+     BUF_X4                        151
+     BUF_X8                         31
+     CLKBUF_X1                     479
+     CLKBUF_X2                       5
+     CLKBUF_X3                      19
+     DFF_X1                       2192
+     INV_X1                       5049
+     INV_X2                         76
+     INV_X4                          7
+     LOGIC0_X1                       1
+     MUX2_X1                       298
+     NAND2_X1                     9425
+     NAND2_X2                      285
+     NAND2_X4                       45
+     NAND3_X1                     1572
+     NAND3_X2                       58
+     NAND3_X4                       23
+     NAND4_X1                      419
+     NAND4_X4                        2
+     NOR2_X1                      1568
+     NOR2_X2                       148
+     NOR2_X4                        73
+     NOR3_X1                        99
+     NOR3_X2                        14
+     NOR3_X4                         6
+     NOR4_X1                        26
+     OAI211_X2                       1
+     OAI21_X1                     3801
+     OAI21_X2                      255
+     OAI21_X4                        1
+     OAI221_X1                     108
+     OAI22_X1                      841
+     OR2_X1                       1141
+     OR2_X2                         34
+     OR2_X4                          4
+     OR3_X1                         15
+     OR4_X1                          2
+     XNOR2_X1                     3027
+     XNOR2_X2                       31
+     XOR2_X1                       405
+     XOR2_X2                         1
+
+   Chip area for module '\rabit_pcu_m10': 42096.628000
+     of which used for sequential elements: 9912.224000 (23.55%)
+
