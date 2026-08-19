@@ -18,7 +18,7 @@ from common import unpack_signed_bus
 from p3llm_dequant_model import (
     DequantGolden,
     pack_u16_lanes,
-    unpack_u16_lanes,
+    unpack_u8_lanes,
 )
 from p3llm_pcu_model import (
     LANES,
@@ -133,9 +133,13 @@ async def reset_dut(dut) -> None:
         await RisingEdge(dut.clk)
         await ReadOnly()
         assert int(_port(dut, "result_valid_o", "result_valid").value) == 0
-        assert int(_port(dut, "fp16_out_o", "fp16_out").value) == 0
+        assert int(_port(dut, "fp8_out_o", "fp8_out").value) == 0
     await FallingEdge(dut.clk)
     dut.rst_n.value = 1
+
+
+# Set by _accept_models when the golden model says a final pack saturated.
+EXPECTED_PACK_OVERFLOW: set[bool] = set()
 
 
 def _scales_for(mode: int, group_index: int) -> tuple[int, ...]:
@@ -231,7 +235,9 @@ def _accept_models(
             dot_last=transaction["dot_last"],
             final_scale16=transaction["final_scale16"],
         )
-        result = trace.result16
+        result = trace.result8
+        if trace.result_overflow and any(trace.result_overflow):
+            EXPECTED_PACK_OVERFLOW.add(True)
     return raw, result
 
 
@@ -254,7 +260,7 @@ async def run_dot(dut, mode: int, *, seed: int) -> None:
     in_ready = _port(dut, "in_ready_o", "in_ready")
     result_valid = _port(dut, "result_valid_o", "result_valid")
     result_ready = _port(dut, "result_ready_i", "result_ready")
-    fp16_out = _port(dut, "fp16_out_o", "fp16_out")
+    fp8_out = _port(dut, "fp8_out_o", "fp8_out")
 
     for cycle in range(4000):
         await FallingEdge(dut.clk)
@@ -279,7 +285,7 @@ async def run_dot(dut, mode: int, *, seed: int) -> None:
         input_accept = current is not None and int(in_ready.value)
         result_accept = int(result_valid.value) and int(result_ready.value)
         if int(result_valid.value):
-            actual_result = unpack_u16_lanes(int(fp16_out.value))
+            actual_result = unpack_u8_lanes(int(fp8_out.value))
             assert expected_result is not None, "DUT produced an unexpected result"
             assert actual_result == expected_result, (
                 f"mode {mode} FP16 vector mismatch at cycle {cycle}\n"
@@ -287,10 +293,10 @@ async def run_dot(dut, mode: int, *, seed: int) -> None:
                 f"expected={tuple(hex(x) for x in expected_result)}"
             )
             if held_result is None:
-                held_result = int(fp16_out.value)
+                held_result = int(fp8_out.value)
             else:
-                assert int(fp16_out.value) == held_result, (
-                    "fp16_out changed while result_valid=1 and result_ready=0"
+                assert int(fp8_out.value) == held_result, (
+                    "fp8_out changed while result_valid=1 and result_ready=0"
                 )
 
         if input_accept:
@@ -348,13 +354,26 @@ async def test_pcu_dequant_all_modes(dut) -> None:
     ):
         await run_dot(dut, mode, seed=seed)
 
-    # Invalid/overflow status must remain clear for this finite, bounded test.
+    # Invalid and protocol status must remain clear for this finite, bounded
+    # test.  Overflow is not asserted to be clear any more: the final pack now
+    # targets FP8-E4M3, whose largest finite magnitude is 448, so whether this
+    # stimulus saturates is a property of the data.  It is instead required to
+    # agree with the golden model, which is the stronger statement.
     for names in (
         ("status_invalid_o", "fp_invalid_o", "invalid_o"),
-        ("status_overflow_o", "status_fp_overflow_o", "fp_overflow_o"),
         ("status_int_overflow_o", "int_overflow_o"),
         ("status_protocol_error_o", "protocol_error_o"),
     ):
         signal = _optional_port(dut, *names)
         if signal is not None:
             assert int(signal.value) == 0, f"unexpected status flag {signal._name}"
+
+    overflow_signal = _optional_port(
+        dut, "status_overflow_o", "status_fp_overflow_o", "fp_overflow_o"
+    )
+    if overflow_signal is not None:
+        expected_overflow = int(bool(EXPECTED_PACK_OVERFLOW))
+        assert int(overflow_signal.value) == expected_overflow, (
+            f"sticky overflow {int(overflow_signal.value)} disagrees with the "
+            f"model's {expected_overflow}"
+        )

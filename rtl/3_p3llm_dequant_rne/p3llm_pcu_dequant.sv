@@ -5,7 +5,13 @@
 // per cycle through a shared fixed32*FP16 multiplier and FP32 adder.  The
 // logical FP32 accumulator remains spatial (one register per PE), while the
 // arithmetic is shared.  On the last group of a dot product, the updated FP32
-// values are multiplied by a common FP16 scale and packed to FP16.
+// values are multiplied by a common FP16 scale and packed to FP8-E4M3.
+//
+// The output is FP8, not FP16, because P3-LLM's activations are FP8: the raw
+// PE decodes its LHS as E4M3 in OP_LINEAR and OP_QK and as S0E4M4 in OP_PV.
+// Emitting FP16 would leave the requantization to the host, which is the data
+// movement this design exists to remove.  All three modes emit E4M3 -- S0E4M4
+// is softmax's output format and therefore only ever a PCU input.
 //
 // All scale and group controls are sampled only on an accepted group_last_i
 // transfer.  The raw-PCU and floating-point pipeline tags use FIFOs, rather
@@ -38,7 +44,7 @@ module p3llm_pcu_dequant (
 
   output logic          result_valid_o,
   input  logic          result_ready_i,
-  output logic [255:0]  fp16_out_o,
+  output logic [127:0]  fp8_out_o,
 
   // Observability and sticky arithmetic/protocol status.
   output logic [511:0]  fp32_acc_debug_o,
@@ -278,7 +284,7 @@ module p3llm_pcu_dequant (
   );
 
   // ------------------------------------------------------------------------
-  // Shared final FP32 * FP16 scale and RNE FP16 pack pipeline
+  // Shared final FP32 * FP16 scale and RNE FP8-E4M3 pack pipeline
   // ------------------------------------------------------------------------
   logic        pack_batch_busy_q;
   logic [4:0]  pack_return_count_q;
@@ -286,7 +292,7 @@ module p3llm_pcu_dequant (
   logic [31:0] pack_fp32;
   logic [15:0] pack_scale;
   logic        pack_out_valid;
-  logic [15:0] pack_fp16;
+  logic [7:0]  pack_fp8;
   logic        pack_invalid;
   logic        pack_overflow;
   logic        pack_underflow;
@@ -305,14 +311,14 @@ module p3llm_pcu_dequant (
     pack_tag_pop = pack_out_valid && (pack_tag_count_q != 6'd0);
   end
 
-  p3llm_dequant_fp32_fp16_mul_pack_pipe u_final_scale_pack (
+  p3llm_dequant_fp32_fp8_mul_pack_pipe u_final_scale_pack (
     .clk         (clk),
     .rst_n       (rst_n),
     .in_valid_i  (pack_in_valid),
     .fp32_i      (pack_fp32),
     .scale_i     (pack_scale),
     .out_valid_o (pack_out_valid),
-    .fp16_o      (pack_fp16),
+    .fp8_o       (pack_fp8),
     .invalid_o   (pack_invalid),
     .overflow_o  (pack_overflow),
     .underflow_o (pack_underflow)
@@ -324,7 +330,7 @@ module p3llm_pcu_dequant (
     for (debug_pe = 0; debug_pe < NUM_PES; debug_pe = debug_pe + 1) begin
       fp32_acc_debug_o[debug_pe*32 +: 32] = fp_acc_q[debug_pe];
     end
-    fp16_out_o = fp16_result_q;
+    fp8_out_o = fp8_result_q;
     busy_o = (slot_fifo_count_q != 2'd0) || batch_active_q ||
              (raw_tag_count_q != 4'd0) ||
              (mul_tag_count_q != 6'd0) ||
@@ -333,7 +339,7 @@ module p3llm_pcu_dequant (
              result_valid_o;
   end
 
-  logic [255:0] fp16_result_q;
+  logic [127:0] fp8_result_q;
 
   // ------------------------------------------------------------------------
   // Sequential state
@@ -530,7 +536,7 @@ module p3llm_pcu_dequant (
       pack_tag_count_q    <= 6'd0;
       pack_batch_busy_q   <= 1'b0;
       pack_return_count_q <= 5'd0;
-      fp16_result_q       <= 256'd0;
+      fp8_result_q        <= 128'd0;
       result_valid_o      <= 1'b0;
     end else begin
       if (result_valid_o && result_ready_i) begin
@@ -540,7 +546,7 @@ module p3llm_pcu_dequant (
       if (start_batch && snapshot_dot_last_q[head_slot]) begin
         pack_batch_busy_q   <= 1'b1;
         pack_return_count_q <= 5'd0;
-        fp16_result_q       <= 256'd0;
+        fp8_result_q        <= 128'd0;
       end
 
       if (pack_in_valid) begin
@@ -550,8 +556,8 @@ module p3llm_pcu_dequant (
       end
 
       if (pack_tag_pop) begin
-        fp16_result_q[pack_tag_pe_q[pack_tag_rd_ptr_q]*16 +: 16] <=
-          pack_fp16;
+        fp8_result_q[pack_tag_pe_q[pack_tag_rd_ptr_q]*8 +: 8] <=
+          pack_fp8;
         pack_tag_rd_ptr_q <= pack_tag_rd_ptr_q + 5'd1;
         if (pack_return_count_q == 5'd15) begin
           pack_return_count_q <= 5'd0;
@@ -637,18 +643,18 @@ module p3llm_pcu_dequant (
   end
 
   logic         result_stalled_q;
-  logic [255:0] result_hold_q;
+  logic [127:0] result_hold_q;
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       result_stalled_q <= 1'b0;
-      result_hold_q    <= 256'd0;
+      result_hold_q    <= 128'd0;
     end else begin
       if (result_stalled_q) begin
-        assert (fp16_result_q == result_hold_q)
+        assert (fp8_result_q == result_hold_q)
           else $error("p3llm_pcu_dequant: result changed while stalled");
       end
       result_stalled_q <= result_valid_o && !result_ready_i;
-      result_hold_q    <= fp16_result_q;
+      result_hold_q    <= fp8_result_q;
     end
   end
 `endif

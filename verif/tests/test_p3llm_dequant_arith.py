@@ -9,9 +9,13 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge
 
 from p3llm_dequant_model import (
+    FP8_NAN,
     add_fp32_rne,
-    fp32_scale_to_fp16,
+    fp32_scale_to_fp8,
+    fp32_scale_to_fp8_flags,
     int32_scale_to_fp32,
+    pack_fp32_exact,
+    unpack_fp8_e4m3,
 )
 
 
@@ -103,7 +107,7 @@ async def run_pack_case(
     expected: int,
     *,
     invalid: int = 0,
-    overflow: int = 0,
+    overflow: int | None = 0,
     underflow: int | None = None,
 ) -> None:
     await FallingEdge(dut.clk)
@@ -118,9 +122,14 @@ async def run_pack_case(
         await RisingEdge(dut.clk)
         await ReadOnly()
         if int(dut.pack_valid_o.value):
-            assert int(dut.pack_fp16_o.value) == expected
+            got = int(dut.pack_fp8_o.value)
+            assert got == expected, (
+                f"pack 0x{fp32:08x} * 0x{scale:04x}: got 0x{got:02x} "
+                f"want 0x{expected:02x}"
+            )
             assert int(dut.pack_invalid_o.value) == invalid
-            assert int(dut.pack_overflow_o.value) == overflow
+            if overflow is not None:
+                assert int(dut.pack_overflow_o.value) == overflow
             if underflow is not None:
                 assert int(dut.pack_underflow_o.value) == underflow
             return
@@ -166,28 +175,81 @@ async def test_dequant_arithmetic_boundaries(dut) -> None:
         await run_add_case(dut, lhs, rhs, add_fp32_rne(lhs, rhs))
     await run_add_case(dut, 0x00000001, 0, 0x7FC00000, invalid=1)
 
+    # --- FP8-E4M3 pack -------------------------------------------------
+    #
+    # The pack stage must be the exact inverse of fp8_e4m3_decoder.sv, so the
+    # first check is a round trip over every code the decoder treats as finite:
+    # decode the code to an exact value, hand that value to the packer as a
+    # binary32 with a unit scale, and require the original code back.
+    for code in range(256):
+        decoded = unpack_fp8_e4m3(code)
+        if decoded.kind == "nan":
+            continue
+        if decoded.kind == "zero":
+            fp32 = decoded.sign << 31
+        else:
+            fp32 = pack_fp32_exact(decoded.coefficient, decoded.exponent)
+        await run_pack_case(dut, fp32, 0x3C00, code, overflow=0)
+
+    # Directed boundaries: E4M3 has bias 7, three fraction bits, gradual
+    # underflow, no infinity, and a largest finite magnitude of 448.
     pack_cases = (
-        (0x3F800000, 0x3C00, None),
-        (0x33800000, 0x3C00, 1),  # exact minimum FP16 subnormal
-        (0x33000000, 0x3C00, 1),  # halfway to zero, underflow after rounding
-        (0x477FE000, 0x3C00, None),  # max finite FP16
-        (0x477FF000, 0x3C00, None),  # overflow halfway boundary
-        (0x3F801000, 0x3C00, None),  # FP16 halfway: retain even 1.0
-        (0x3F803000, 0x3C00, None),  # next halfway: round upward
-        (0xBF803000, 0x3800, None),
-        (0x3F800000, 0x0001, 1),  # subnormal final scale
+        (0x3F800000, 0x3C00),  # 1.0
+        (0x3F880000, 0x3C00),  # 1.0625: exact halfway, ties to even 1.0
+        (0x3F980000, 0x3C00),  # 1.1875: exact halfway, ties to even 1.25
+        (0x43E00000, 0x3C00),  # 448, the largest finite code, exactly
+        (0x43E80000, 0x3C00),  # 464: halfway to the NaN code, ties back to 448
+        (0x43EB0000, 0x3C00),  # 470: past that halfway, so it must saturate
+        (0x461C4000, 0x3C00),  # 10000, far past the top
+        (0x3C800000, 0x3C00),  # 2**-6, the smallest normal
+        (0x3C000000, 0x3C00),  # 2**-7, already subnormal in E4M3
+        (0x3B800000, 0x3C00),  # 2**-8
+        (0x3B000000, 0x3C00),  # 2**-9, the smallest subnormal
+        (0x3AC00000, 0x3C00),  # 1.5 * 2**-10 rounds up to 2**-9
+        (0x3A800000, 0x3C00),  # 2**-10: exact halfway to zero, ties to even
+        (0xC3E00000, 0x3C00),  # -448
+        (0x00000000, 0x3C00),  # +0
+        (0x80000000, 0x3C00),  # -0
+        (0x3F800000, 0x0001),  # subnormal final scale
+        (0x3F800000, 0x0000),  # +0 final scale
+        (0x3F800000, 0x4900),  # scale 10.0
+        (0xBF800000, 0x7BFF),  # scale = max binary16, saturates negative
     )
-    for fp32, scale, expected_underflow in pack_cases:
-        expected = fp32_scale_to_fp16(fp32, scale)
+    for fp32, scale in pack_cases:
+        code, invalid, overflow, underflow = fp32_scale_to_fp8_flags(fp32, scale)
         await run_pack_case(
             dut,
             fp32,
             scale,
-            expected,
-            overflow=int(expected & 0x7FFF == 0x7C00),
-            underflow=expected_underflow,
+            code,
+            invalid=invalid,
+            overflow=overflow,
+            underflow=underflow,
         )
-    await run_pack_case(dut, 0x3F800000, 0xBC00, 0x7E00, invalid=1)
+    # Out-of-contract scale, and a non-finite binary32: both give E4M3 NaN.
+    await run_pack_case(dut, 0x3F800000, 0xBC00, FP8_NAN, invalid=1, overflow=0)
+    await run_pack_case(dut, 0x7F800000, 0x3C00, FP8_NAN, invalid=1, overflow=0)
+    await run_pack_case(dut, 0x7FC00000, 0x3C00, FP8_NAN, invalid=1, overflow=0)
+
+    # Randomized pack sweep across the whole binary32 range.
+    pack_rng = random.Random(0x8E4)
+    for _ in range(300):
+        fp32 = pack_rng.randrange(0, 1 << 32)
+        if (fp32 >> 23) & 0xFF == 0xFF:
+            fp32 &= ~(1 << 30)
+        scale = pack_rng.choice(
+            (0x0001, 0x0400, 0x3000, 0x3555, 0x3C00, 0x4900, 0x6400, 0x7BFF)
+        )
+        code, invalid, overflow, underflow = fp32_scale_to_fp8_flags(fp32, scale)
+        await run_pack_case(
+            dut,
+            fp32,
+            scale,
+            code,
+            invalid=invalid,
+            overflow=overflow,
+            underflow=underflow,
+        )
 
     # Bubble-heavy randomized normal-value sweep through all three pipes.
     rng = random.Random(0xD3A0)

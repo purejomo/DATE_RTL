@@ -8,6 +8,7 @@ from p3llm_dequant_model import (
     DequantGolden,
     add_fp32_rne,
     fp32_scale_to_fp16,
+    fp32_scale_to_fp8,
     int32_scale_to_fp32,
     pack_fp16_exact,
     pack_fp32_exact,
@@ -114,7 +115,7 @@ class DequantModelTest(unittest.TestCase):
                     dot_last=False,
                     final_scale16=0x3C00,
                 )
-                self.assertIsNone(first.result16)
+                self.assertIsNone(first.result8)
                 second = model.accept_group(
                     raw1,
                     scale1,
@@ -123,10 +124,10 @@ class DequantModelTest(unittest.TestCase):
                     dot_last=True,
                     final_scale16=0x3C00,
                 )
-                self.assertIsNotNone(second.result16)
-                assert second.result16 is not None
-                self.assertGreaterEqual(len(set(second.result16)), 8)
-                self.assertNotEqual(second.result16[0], second.result16[1])
+                self.assertIsNotNone(second.result8)
+                assert second.result8 is not None
+                self.assertGreaterEqual(len(set(second.result8)), 4)
+                self.assertNotEqual(second.result8[0], second.result8[1])
 
                 # A new dot explicitly clears all prior FP32 state.
                 cleared = model.accept_group(
@@ -137,7 +138,9 @@ class DequantModelTest(unittest.TestCase):
                     dot_last=True,
                     final_scale16=0x3C00,
                 )
-                self.assertEqual(cleared.result16, (0x3C00,) * NUM_PES)
+                # raw_one * scale 1.0 * 2**offset is exactly 1.0 in every
+                # mode, and E4M3 encodes 1.0 as 0x38.
+                self.assertEqual(cleared.result8, (0x38,) * NUM_PES)
 
     def test_nonfinite_scale_is_rejected_by_the_contract(self) -> None:
         with self.assertRaises(ValueError):
@@ -148,6 +151,10 @@ class DequantModelTest(unittest.TestCase):
             int32_scale_to_fp32(1, 0xBC00, -12)
         with self.assertRaises(ValueError):
             fp32_scale_to_fp16(0, 0x8000)
+        with self.assertRaises(ValueError):
+            fp32_scale_to_fp8(0, 0x7C00)
+        with self.assertRaises(ValueError):
+            fp32_scale_to_fp8(0, 0x8000)
 
 
 if __name__ == "__main__":

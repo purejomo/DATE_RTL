@@ -146,7 +146,7 @@ VERILOG_SOURCES := $(P3LLM_RTL) $(RTL)/3_p3llm/p3llm_pcu.sv
 EXTRA_ARGS      += --assert -DP3LLM_ASSERTIONS
 endif
 
-P3LLM_DEQUANT_DIR := $(RTL)/3_p3llm_with_dequant
+P3LLM_DEQUANT_DIR := $(RTL)/3_p3llm_dequant_rne
 P3LLM_DEQUANT_RTL := $(P3LLM_DEQUANT_DIR)/p3llm_pkg.sv \
                      $(P3LLM_DEQUANT_DIR)/fp8_e4m3_decoder.sv \
                      $(P3LLM_DEQUANT_DIR)/fp8_s0e4m4_decoder.sv \
@@ -158,7 +158,7 @@ P3LLM_DEQUANT_RTL := $(P3LLM_DEQUANT_DIR)/p3llm_pkg.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_pcu.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fixed32_fp16_mul_pipe.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_add_pipe.sv \
-                     $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_fp16_mul_pack_pipe.sv \
+                     $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_fp8_mul_pack_pipe.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_pcu_dequant.sv
 
 # --- AWQ in-PCU dequantization ------------------------------------------
@@ -187,7 +187,7 @@ MODULE          := test_p3llm_dequant_arith
 TESTCASE        := test_dequant_arithmetic_boundaries
 VERILOG_SOURCES := $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fixed32_fp16_mul_pipe.sv \
                    $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_add_pipe.sv \
-                   $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_fp16_mul_pack_pipe.sv \
+                   $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_fp8_mul_pack_pipe.sv \
                    $(VERIF)/tests/harness/p3llm_dequant_arith_tb.sv
 endif
 
