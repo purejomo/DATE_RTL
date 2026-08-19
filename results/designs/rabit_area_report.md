@@ -130,11 +130,13 @@ projection 형상에서 측정한 값이다.
 | 4096x4096 | MANT_W 12, shifter off | 0.00 | 3.178e-04 | 4.533e-04 | 4.307e-01 | no |
 | 4096x4096 | MANT_W 10, shifter off | 0.00 | 1.297e-03 | 1.518e-03 | 4.308e-01 | no |
 | 4096x4096 | MANT_W 12, shifter on + RNE | 0.48 | 2.108e-04 | 2.969e-04 | 4.307e-01 | no |
+| 4096x4096 | acc16: MANT_W 10, RNE, ACC_W 16 | 0.48 | 7.622e-02 | 2.756e-01 | 4.580e-01 | yes |
 | 11008x4096 | MANT_W 12, shifter on | 0.48 | 6.609e-04 | 9.982e-04 | 2.983e-01 | no |
 | 11008x4096 | MANT_W 10, shifter on | 0.48 | 2.838e-03 | 3.458e-03 | 2.982e-01 | no |
 | 11008x4096 | MANT_W 12, shifter off | 0.00 | 2.407e-04 | 3.217e-04 | 2.982e-01 | no |
 | 11008x4096 | MANT_W 10, shifter off | 0.00 | 1.085e-03 | 1.402e-03 | 2.982e-01 | no |
 | 11008x4096 | MANT_W 12, shifter on + RNE | 0.48 | 2.131e-04 | 3.093e-04 | 2.983e-01 | no |
+| 11008x4096 | acc16: MANT_W 10, RNE, ACC_W 16 | 0.48 | 1.665e-01 | 2.973e-01 | 3.636e-01 | yes |
 
 cell 당 5 seeds x 16 sampled output rows, 오차는 L2-relative.
 

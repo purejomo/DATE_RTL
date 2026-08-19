@@ -16,7 +16,13 @@ Two error columns, because they answer different questions:
   pcu       ||y_hat - y_exact|| / ||y_exact||
             what the PCU's fixed-point datapath costs against an exact
             evaluation of the same binarized weights. This is the number the
-            MANT_W / SHIFTER_EN knobs actually move.
+            MANT_W / SHIFTER_EN / ACC_W knobs actually move.
+
+The ACC_W column exists because rtl/4_rabit_acc16 is a real design point, not a
+hypothetical: it is the RaBiT entry in the comparison's axis 2 (narrowed
+accumulator). Its saturation behaviour is a property of the k depth, so it has
+to be measured at the projection-layer shapes rather than inferred from a short
+regression -- watch the `sat` column, not just the error.
 
 Everything streams one output row at a time, so peak memory is O(din) rather
 than O(dout*din) and an 11008x4096 sweep fits comfortably.
@@ -75,6 +81,7 @@ def sweep_one(
     mant_w: int,
     shifter_en: int,
     shift_rnd: int,
+    acc_w: int = rm.ACC_W,
     rows: int,
 ):
     """Run `rows` sampled output rows of a dout x din projection layer."""
@@ -136,7 +143,12 @@ def sweep_one(
                     shift_rnd=shift_rnd,
                 )
                 sat = sat or chunk_sat
-                acc = rm.saturate_signed(acc + aligned, rm.ACC_W)
+                # A narrowed accumulator saturates here rather than in the
+                # aligner, so this is where the acc16 design point loses its
+                # accuracy on a deep k sweep.
+                before = acc + aligned
+                acc = rm.saturate_signed(before, acc_w)
+                sat = sat or (acc != before)
             y_exact += g * float(exact)
             y_hat += g * float(Fraction(acc) * acc_weight)
 
@@ -163,12 +175,16 @@ def sweep_one(
 
 
 CONFIGS = (
-    # label, MANT_W, SHIFTER_EN, SHIFT_RND
-    ("MANT_W 12, shifter on", 12, 1, 0),
-    ("MANT_W 10, shifter on", 10, 1, 0),
-    ("MANT_W 12, shifter off", 12, 0, 0),
-    ("MANT_W 10, shifter off", 10, 0, 0),
-    ("MANT_W 12, shifter on + RNE", 12, 1, 1),
+    # label, MANT_W, SHIFTER_EN, SHIFT_RND, ACC_W
+    ("MANT_W 12, shifter on", 12, 1, 0, 32),
+    ("MANT_W 10, shifter on", 10, 1, 0, 32),
+    ("MANT_W 12, shifter off", 12, 0, 0, 32),
+    ("MANT_W 10, shifter off", 10, 0, 0, 32),
+    ("MANT_W 12, shifter on + RNE", 12, 1, 1, 32),
+    # The axis-2 design point, rtl/4_rabit_acc16. MANT_W has to fall to 10
+    # with ACC_W: rabit_align_shift requires ACC_W > PSUM_W = MANT_W + 5.
+    # SHIFT_RND comes on for free, because the aligner already has the path.
+    ("acc16: MANT_W 10, RNE, ACC_W 16", 10, 1, 1, 16),
 )
 
 
@@ -196,7 +212,7 @@ def main(argv=None) -> int:
     )
     print("|---|---|---:|---:|---:|---:|:--:|")
     for dout, din in shapes:
-        for label, mant_w, shifter_en, shift_rnd in CONFIGS:
+        for label, mant_w, shifter_en, shift_rnd, acc_w in CONFIGS:
             pcu_errs = []
             quant_errs = []
             shifts = []
@@ -209,6 +225,7 @@ def main(argv=None) -> int:
                     mant_w=mant_w,
                     shifter_en=shifter_en,
                     shift_rnd=shift_rnd,
+                    acc_w=acc_w,
                     rows=args.rows,
                 )
                 pcu_errs.append(result["pcu"])
@@ -236,7 +253,17 @@ def main(argv=None) -> int:
     )
     print(
         "- **The `+ RNE` row removes only that bias** (proposal P1 in\n"
-        "  docs/rabit_pcu_spec.md). It is not the delivered default."
+        "  docs/rabit_pcu_spec.md). It is not the delivered default, but it is\n"
+        "  switched on in the acc16 design point below, where the aligner's\n"
+        "  right shift is the only place bits are discarded."
+    )
+    print(
+        "- **The acc16 row is the comparison's axis 2** "
+        "(rtl/4_rabit_acc16).\n  Read its `sat` column first: one chunk "
+        "contributes up to NIN * 2**MANT_W\n  = 16384 accumulator LSB, so a "
+        "din = 4096 sweep (256 chunks) needs 23 bits\n  and a 16-bit "
+        "accumulator clamps. The area it saves is real (45,254 ->\n"
+        "  32,209 um2 at 250 MHz); the k depth it can represent is the price."
     )
     print(
         "- **These rows hold h = 1** (see `_fit_row`), which keeps the block "

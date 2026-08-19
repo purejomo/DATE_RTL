@@ -446,3 +446,16 @@ RTL 은 `NROW` (한 beat 를 공간적으로 공유하는 activation row 수) �
 - **P3. 전력.** 다른 행과 같은 한계가 있다 — vectorless `-global 0.20` 은
   활성도를 설계마다 구분하지 않아 셀 수에 거의 비례한다 (README 4 절). 다만
   이 설계는 곱셈기를 가진 전 행 중 pJ/MAC 이 가장 낮다 (0.52).
+- **P4. 비교 3 축 중 ②·③ 이 비어 있다.** awq / p3llm / rabit 은 base 외에
+  acc16 (`*_acc16`) 과 PU 내 dequant (`*_dequant_rne`) 행을 갖는데 SpinQuant 는
+  아직 base 뿐이다. 특히 ③ 은 **이 확장의 원래 동기가 실제로 적용되는 유일한
+  설계**다: 나머지 셋은 activation 이 부동소수점이라 dequant 만 있고 requant 가
+  없지만, W4A4 인 SpinQuant 는 dequant → RNE → INT4 재양자화까지 PU 안에서
+  끝낼 수 있다.
+  - ② 는 파라미터 수준이다. 이 설계는 이미 `ACC_W` 와 `ACC_CHAIN_W` 를 노브로
+    갖고 있고 (`spinquant_pcu_acc32` 행이 그 예), `verif` 도 두 값을
+    환경변수로 받는다.
+  - ③ 은 새 디렉토리 `5_spinquant_dequant_requant` 가 필요하다. top 이름과
+    합성 label 은 기존 행과 겹치지 않게 잡아야 한다 — `run_block_synth.sh` 가
+    `generated/${TOP}.v` 에, `run_all.sh` 가 `${top}_power.rpt` 에 쓰므로 이름이
+    겹치면 두 행이 서로를 덮어쓴다.

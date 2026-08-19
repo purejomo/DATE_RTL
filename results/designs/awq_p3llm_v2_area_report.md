@@ -112,7 +112,7 @@ path 는 zero-point 쪽이 아니라 block-float 정렬기 쪽이다** — ZP �
 | | Power | pJ/MAC | GMAC/s |
 |---|---:|---:|---:|
 | AWQ PCU v2, 8 PE x 4 way | 0.0177 W | 1.11 | 16.0 |
-| AWQ PCU v2, 16 PE x 4 way | 0.0344 W | 1.07 | 32.0 |
+| AWQ PCU v2, 16 PE x 4 way | 0.0346 W | 1.08 | 32.0 |
 | P3-LLM PCU, FP4/FP8, 16 PE x 4 way | 0.0351 W | 1.10 | 32.0 |
 | SpinQuant W4A4 PCU, 16 PE x 4 way | 0.0167 W | 0.52 | 32.0 |
 | HBM-PIM FP16 SIMD 16 lane | 0.0151 W | 3.78 | 4.0 |

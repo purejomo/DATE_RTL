@@ -24,7 +24,7 @@
 |---|---:|---:|---:|---:|
 | SpinQuant W4A4 PCU, 16 PE x 4 way | 32,376 | 0.538x | 64 | 506 |
 | P3-LLM PCU, FP4/FP8, 16 PE x 4 way | 71,287 | 1.185x | 64 | 1,114 |
-| AWQ P3-LLM PCU, INT4/BF16, 16 PE x 4 way | 71,745 | 1.192x | 64 | 1,121 |
+| AWQ P3-LLM PCU, INT4/BF16, 16 PE x 4 way | 72,280 | 1.201x | 64 | 1,129 |
 | RaBiT PCU, 2-bit RB/FP16, 8 PE (250 MHz) | 45,254 | 0.752x | 128 | 354 |
 | HBM-PIM FP16 SIMD 16 lane | 60,176 | 1.000x | 16 | 3,761 |
 

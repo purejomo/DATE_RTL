@@ -73,6 +73,30 @@ metadata 배치를 구현하지 않는다.
 않는다** (EXTENSION). 따라서 이 설계는 GPU postprocess 가속기나 end-to-end CUDA
 bit-exact 를 주장하지 않는다.
 
+**이 표는 축① (base) 의 역할 분담이다.** 축③ (`*_dequant_rne`) 은 마지막 행의
+group scale 적용과 BF16 packing 을 PCU 안으로 옮긴다 — §1.4 참고.
+
+---
+### 1.4 세 개의 비교 축
+
+이 명세가 기술하는 것은 축①이다. 같은 조직을 누산 · 후처리 축으로 확장한
+디렉토리가 함께 있다.
+
+| 축 | 8 PE | 16 PE | 누산 | 출력 |
+|---|---|---|---|---|
+| ① base | `2_awq_p3llm_8pe_v2` | `2_awq_p3llm_16pe_v2` | signed 32b | raw INT32 |
+| ② acc16 | `2_awq_p3llm_8pe_v2_acc16` | `2_awq_p3llm_16pe_v2_acc16` | 누산 전 RNE narrow, signed 16b | raw INT16 |
+| ③ dequant_rne | `2_awq_p3llm_8pe_v2_dequant_rne` | `2_awq_p3llm_16pe_v2_dequant_rne` | signed 32b (무변경) | BF16 / binary16 |
+
+- ②는 stage 3 만 다르다. 정렬 · weight decode · 곱셈기 · 4:2 compressor · CPA 가
+  ①과 bit-identical 이므로 면적 차이가 누산기에만 귀속된다. `ACC_RSH` 기본값은
+  BF16 12 / binary16 15 — group 128 에서 saturate 가 절대 나지 않는 최악 경계다.
+- ③은 raw PCU 를 건드리지 않고 공유 부동소수점 엔진 하나를 얹는다. group 경계마다
+  INT32 누산기를 스냅샷해 `RNE32(acc * scale * 2^(i_ref_exp - GUARD))` 를 계산하고,
+  group 간 합을 PCU 안 FP32 state 로 들고 있다가 `i_dot_last` 에서 한 번만
+  activation 형식으로 반올림한다. AWQ 는 activation 이 이미 BF16/binary16 이라
+  **requant 단계도 두 번째 스케일도 없다.**
+
 ---
 
 ## 2. 수 표현과 폭
@@ -132,6 +156,12 @@ group size 가 256 을 넘으면 실제로 도달할 수 있다.
 
 누산기 LSB 의 가치는 `2^(i_ref_exp - GUARD)` 다. 그 스케일과 group scale `s` 는
 PCU 밖에서 적용한다.
+
+축②는 이 누산기를 16-bit 으로 좁힌다. 4-lane partial sum(28b) 을 `ACC_RSH`
+만큼 RNE 로 좁힌 뒤 16-bit saturating accumulate 하므로 LSB 의 가치가
+`2^(i_ref_exp - GUARD + ACC_RSH)` 로 바뀌지만, 이 스케일도 원래 소프트웨어가
+적용하던 값이라 새 포트가 필요 없다. 상태 비트도 추가하지 않았다 — ①도 조용히
+saturate 하므로 축 간 비교를 위해 동일하게 유지한다.
 
 ---
 
@@ -198,29 +228,59 @@ module int4float_pcu #(
 );
 ```
 
-| top | 형식 | `EXP_W`/`MANT_W` | `i_weight_zp` | 용도 |
-|---|---|---|---|---|
-| `int4bf16_pcu32` | BF16 | 8 / 7 | 32 bit | **H2-S1 본 행** |
-| `int4fp16_pcu32` | binary16 | 5 / 10 | 32 bit | 형식만 바꾼 비교 |
-| `int4bf16_pcu_top` | BF16 | 8 / 7 | 4 bit (v1) | 16 PE 행 |
+| top | 축 | 형식 | `EXP_W`/`MANT_W` | `i_weight_zp` | `o_acc` | 용도 |
+|---|---|---|---|---|---|---|
+| `int4bf16_pcu32` | ① | BF16 | 8 / 7 | 32 bit | 256 bit | **H2-S1 본 행** |
+| `int4fp16_pcu32` | ① | binary16 | 5 / 10 | 32 bit | 256 bit | 형식만 바꾼 비교 |
+| `int4bf16_pcu_top` | ① | BF16 | 8 / 7 | 64 bit | 512 bit | 16 PE 행 |
+| `int4bf16_pcu32_acc16` | ② | BF16 | 8 / 7 | 32 bit | 128 bit | `ACC_RSH` 12 |
+| `int4fp16_pcu32_acc16` | ② | binary16 | 5 / 10 | 32 bit | 128 bit | `ACC_RSH` 15 |
+| `int4bf16_pcu_top_acc16` | ② | BF16 | 8 / 7 | 64 bit | 256 bit | 16 PE, `ACC_RSH` 12 |
+| `int4bf16_pcu32_dq` | ③ | BF16 | 8 / 7 | 32 bit | 256 bit | + `o_result` 128 bit |
+| `int4fp16_pcu32_dq` | ③ | binary16 | 5 / 10 | 32 bit | 256 bit | + `o_result` 128 bit |
+| `int4bf16_pcu_top_dq` | ③ | BF16 | 8 / 7 | 64 bit | 512 bit | + `o_result` 256 bit |
+| `int4fp16_pcu_top_dq` | ③ | binary16 | 5 / 10 | 64 bit | 512 bit | + `o_result` 256 bit |
 
 `int4bf16_pcu32_per_pe_zp` / `int4fp16_pcu32_per_pe_zp` 는 Fusion-PIMSim 이 쓰는
-**순수 alias** 다. 상태도 산술도 추가하지 않는다.
+**순수 alias** 다. 상태도 산술도 추가하지 않는다. 축② 사본에서는 삭제했다 —
+acc16 은 시뮬레이터 계약이 아니다.
 
-### 4.1 8 PE 와 16 PE 의 포트 폭이 다르다
+축③ top 은 위 포트에 다음을 더한다. raw `o_acc` 는 남긴다 (base 대비 비교용).
 
-`int4bf16_pcu_top` (16 PE) 은 아직 v1 broadcast nibble 이다. 두 디렉토리는 각자
-`int4float_pcu/pe/align` 사본을 들고 있으므로 **함께 컴파일하면 모듈이 중복
-정의된다** — 합성도 회귀도 한 번에 한쪽만 쓴다.
+```verilog
+input  i_group_last                      // group 의 마지막 accepted tile
+input  [NUM_PES*16-1:0] i_scale          // PE 별 group scale, i_group_last 에 샘플
+input  i_fp_acc_clear                    // 새 dot product 시작
+input  i_dot_last                        // 최종 출력 요청
+output o_result_valid
+input  i_result_ready
+output [NUM_PES*16-1:0] o_result
+output o_busy
+output [3:0] o_status_sticky   // [0] invalid [1] overflow [2] underflow [3] protocol
+```
+
+### 4.1 8 PE 와 16 PE 는 이제 둘 다 v2 다
+
+두 판 모두 `i_weight_zp` 이 PE 당 독립 4-bit 이다 (8 PE 32 bit, 16 PE 64 bit).
+v1 broadcast nibble 빌드는 트리에서 삭제했다.
+
+다섯 디렉토리는 각자 `int4float_pcu/pe/align` 사본을 들고 있으므로 **어느 둘을
+함께 컴파일해도 모듈이 중복 정의된다** — 합성도 회귀도 한 번에 하나만 쓴다.
 
 ---
 
 ## 5. 검증
 
 ```bash
-cd verif && make TEST=pcu_bf16_32   # 8 PE, BF16, per-PE ZP
-cd verif && make TEST=pcu_fp16_32   # 8 PE, binary16, per-PE ZP
-cd verif && make TEST=pcu_bf16_64   # 16 PE, BF16, broadcast ZP (v1)
+cd verif && make TEST=pcu_bf16_32         # ① 8 PE, BF16
+cd verif && make TEST=pcu_fp16_32         # ① 8 PE, binary16
+cd verif && make TEST=pcu_bf16_64         # ① 16 PE, BF16
+cd verif && make TEST=pcu_bf16_32_acc16   # ② 8 PE, ACC_RSH 12
+cd verif && make TEST=pcu_fp16_32_acc16   # ② 8 PE, ACC_RSH 15
+cd verif && make TEST=pcu_bf16_64_acc16   # ② 16 PE
+cd verif && make TEST=awq_dequant_arith   # ③ 공유 FP pipe 3 개, BF16·FP16 동시
+cd verif && make TEST=pcu_bf16_32_dq      # ③ 8 PE end-to-end
+cd verif && make TEST=pcu_bf16_64_dq      # ③ 16 PE end-to-end
 ```
 
 golden model 은 순수 파이썬 정수 연산이다
@@ -229,15 +289,27 @@ golden model 은 순수 파이썬 정수 연산이다
 point 를 전혀 쓰지 않으므로, 일치는 시뮬레이터 FPU 가 아니라 설계에 대한 진술이다.
 
 - `transaction` 의 zero point 는 nibble 하나 (v1 broadcast) 또는 PE 당 하나
-  (v2) 를 모두 받는다. testbench 는 `PCU_ZP_PER_PE` 로 어느 쪽인지 알고 stimulus
-  와 model 을 함께 맞춘다.
+  (v2) 를 모두 받는다. RTL 은 전부 v2 지만 계약 자체는 model 에 남겨 두었고,
+  testbench 는 `PCU_ZP_PER_PE` 로 어느 쪽인지 알고 stimulus 와 model 을 함께
+  맞춘다.
+- 같은 model 이 `acc_bits` / `acc_rsh` 로 축②도 덮는다. 기본값
+  (`32`, `0`) 이 축①을 그대로 재현하므로 testbench 는 하나다.
 - stimulus 는 corner encoding (zero, ±0, 최소 subnormal, subnormal/normal 경계,
   ±1, 최대 finite, ±inf, NaN) 30 % + 랜덤 70 % 이고, 64 transaction 마다
   `acc_clear` 를 넣어 clear/accumulate 경로를 함께 돈다.
-- 매 transaction 마다 PE 별 32-bit 누산기, `o_saturate`, `o_invalid` 를 전부
-  bit-exact 대조한다.
+- 매 transaction 마다 PE 별 누산기 (①은 32-bit, ②는 16-bit), `o_saturate`,
+  `o_invalid` 를 전부 bit-exact 대조한다.
 
 `PCU_ITERS` 로 규모를 조절한다 (기본 4000).
+
+축③은 두 층으로 검증한다.
+
+- `awq_dequant_arith` 가 공유 pipe 3 개를 BF16 · binary16 양쪽 파라미터로 지시
+  경계 + 랜덤 스윕 대조한다
+  ([verif/models/awq_dequant_model.py](../verif/models/awq_dequant_model.py)).
+- `pcu_bf16_32_dq` / `pcu_bf16_64_dq` 가 그 위의 wrapper — 스냅샷 슬롯 2 개,
+  태그 FIFO 3 개, 배치 시퀀서, PE 별 FP32 누산 bank — 를 end-to-end 로 돌려
+  raw INT32, 최종 BF16 벡터, sticky status 를 전부 model 과 맞춘다.
 
 ### 5.1 2026-08-16 Fusion-PIMSim 재검증
 
@@ -264,9 +336,28 @@ Nangate45 typical, Yosys 0.52 (ABC area mode) + OpenROAD, 논리 합성까지.
 
 | top | 목표 주기 | 면적 (um2) | baseline 대비 | cells | DFF | setup slack |
 |---|---:|---:|---:|---:|---:|---:|
-| `int4bf16_pcu32` (8 PE, v2) | 2.0 ns | 36,919 | 0.614x | 32,282 | 1566 | +0.66 ns |
-| `int4bf16_pcu_top` (16 PE, v1) | 2.0 ns | 71,745 | 1.192x | 62,010 | 3054 | +0.65 ns |
+| `int4bf16_pcu32` (8 PE, ①) | 2.0 ns | 36,919 | 0.614x | 32,282 | 1566 | +0.66 ns |
+| `int4bf16_pcu_top` (16 PE, ①) | 2.0 ns | 72,280 | 1.201x | 63,288 | 3054 | +0.67 ns |
 | baseline `hbmpim_fp16_pcu_16_lane` | 4.0 ns | 60,176 | 1.000x | 56,433 | 1578 | +2.01 ns |
+
+세 축을 나란히 놓으면:
+
+| top | 축 | 면적 (um2) | ① 대비 | DFF |
+|---|---|---:|---:|---:|
+| `int4bf16_pcu32` | ① | 36,919 | — | 1566 |
+| `int4bf16_pcu32_acc16` | ② | 36,194 | -2.0 % | 1438 |
+| `int4bf16_pcu32_dq` | ③ | 61,702 | +67.1 % | 3597 |
+| `int4bf16_pcu_top` | ① | 72,280 | — | 3054 |
+| `int4bf16_pcu_top_acc16` | ② | 68,569 | -5.1 % | 2798 |
+| `int4bf16_pcu_top_dq` | ③ | 105,061 | +45.4 % | 6336 |
+
+②의 절감이 8 PE 에서 작은 것은 누산기가 이 경계에서 차지하는 비중 자체가 작기
+때문이다 — 8 PE 는 공유 정렬기 4 개가 `NUM_PES` 를 따라 줄지 않아 고정 비용
+비중이 크다. ③의 증가분은 대부분 공유 엔진의 FP32 state 와 태그 FIFO 다 (DFF
+2.3 배).
+
+**16 PE 행 주의.** 위 72,280 um2 는 v2 로 전환한 뒤의 값이다. v1 시절 인용치
+(71,745 um2) 와 직접 비교할 수 없다.
 
 v1 대비 **-342.6 um2 (-0.92 %)**. zero point 를 PE 별로 주면서 면적이 오히려
 줄었고, 순차 면적과 DFF 수는 bit 단위로 같다 — 즉 **표준 AutoAWQ metadata 배치를
@@ -277,9 +368,13 @@ v1 대비 **-342.6 um2 (-0.92 %)**. zero point 를 PE 별로 주면서 면적이
 
 ## 7. 남은 것
 
-- **16 PE 판이 아직 v1 이다.** 같은 이유로 broadcast ZP 는 AutoAWQ metadata 를
-  구현하지 않는다. 옮기려면 `int4float_pcu.v` 의 슬라이스 한 줄과 top 포트 폭만
-  바꾸면 되고 (`i_weight_zp[pe*4 +: 4]`, 64 bit), 회귀는 `PCU_ZP_PER_PE=1` 로
-  같은 testbench 가 덮는다. 다만 그러면 비교표의 16-PE 행을 다시 합성해야 한다.
-- **GPU postprocess 는 EXTENSION 이다.** group scale 적용과 output-group
-  reduction 의 latency/PPA 는 이 리포트의 어느 숫자에도 들어 있지 않다.
+- **`ACC_RSH` 최적값을 찾지 않았다.** 기본값은 "group 128 에서 saturate 가 절대
+  안 나는 최악 경계" 이지 정확도 최적값이 아니다. 시프트량은 배선이라 면적에는
+  거의 영향이 없으나 정확도에는 직접 영향을 준다 — accuracy 스윕이 필요하다.
+- **GPU postprocess 는 축①·②에서 여전히 EXTENSION 이다.** group scale 적용과
+  output-group reduction 의 latency/PPA 는 그 두 축의 어느 숫자에도 들어 있지
+  않다. 축③은 그중 group scale 적용과 BF16 packing 을 PCU 안으로 가져왔으므로
+  해당 부분이 면적에 계상돼 있다.
+- **축③의 `i_ref_exp` 가정.** group 안에서 block exponent 가 일정하다고 가정하고
+  accepted `i_group_last` 에서 한 번 샘플한다. 소프트웨어가 block 단위로 고르는
+  값이므로 "block 이 group 경계를 걸치지 않는다" 로 좁힌 것이다.

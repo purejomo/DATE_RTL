@@ -5,8 +5,8 @@
 | 경로 | 범위 | 만드는 것 |
 |---|---|---|
 | `area.csv` | **공통** — label 단위 원시 합성값 | `run_all.sh synth`, `run_rabit.sh`, `run_rabit_fs.sh`, `run_spinquant.sh` (label 단위 병합) |
-| `comparison_compute.csv` | **공통** — 논문 compute 비교표 (45nm) | `build_compute_table.py` |
-| `comparison_22nm.csv` | **공통** — 22nm 투영 비교표 | `build_comparison_22nm.py` |
+| `comparison_compute.csv` | **공통** — 논문 compute 비교표 (45nm). 축①②③ 13 행 전부, `accumulator_bits` 열로 축을 구분한다 | `build_compute_table.py` |
+| `comparison_22nm.csv` | **공통** — 22nm 투영 비교표. `FINAL_EXISTING_LABELS` 로 축① 5 행만 고정 선택하므로 축②③ 을 추가해도 바뀌지 않는다 | `build_comparison_22nm.py` |
 | `reports/<label>/` | **공통** — label 단위 Yosys·OpenROAD 리포트 | `run_block_synth.sh` |
 | `power/<top>_power.rpt` | **공통** — vectorless 전력, `-global` 0.20 모델 | `run_power.sh` |
 | `designs/` | **설계별** — 한 설계에만 해당하는 분석 | `build_awq_report.py`, `build_rabit_report.py`, `build_rabit_fs_report.py`, `build_rabit_pe_scaling.py`, `build_spinquant_report.py`, `tools/rabit_accuracy.py`, `tools/pack_rabit_fs.py` |
@@ -16,10 +16,10 @@
 
 | 파일 | 내용 |
 |---|---|
-| `awq_p3llm_v2_area_report.md` | baseline 대비 면적·타이밍, v1(broadcast ZP) → v2(PE 별 ZP) 차이 (`build_awq_report.py`) |
+| `awq_p3llm_v2_area_report.md` | baseline 대비 면적·타이밍, v1(broadcast ZP) → v2(PE 별 ZP) 차이 (`build_awq_report.py`). 8 PE·16 PE 모두 v2 수치다 |
 | `rabit_area_report.md` | baseline 대비 면적·타이밍, 모듈별 분해, `MANT_W`/`SHIFTER_EN` 스윕, 전력 해석 |
-| `rabit_accuracy.md` | 4096x4096 · 11008x4096 정확도 스윕 (`tools/rabit_accuracy.py`) |
+| `rabit_accuracy.md` | 4096x4096 · 11008x4096 정확도 스윕 (`tools/rabit_accuracy.py`). `MANT_W`/`SHIFTER_EN`/`SHIFT_RND` 에 더해 축② (`ACC_W` 16) 행을 포함하며, 그 행의 `sat` 열이 16-bit 누산기의 k 깊이 한계를 보여 준다 |
 | `rabit_pe_scaling.md` | 8 -> 16 PE 확장 검토: column word 제약, 대역폭 포화, 면적 실측 |
-| `rabit_fs_report.md` | full-scale 변종 면적 비교 |
-| `rabit_fs_accuracy.md` | full-scale 변종 정확도 (`tools/pack_rabit_fs.py`) |
+| `rabit_fs_report.md` | 축③ (full-scale) 변종 면적 비교 |
+| `rabit_fs_accuracy.md` | 축③ (full-scale) 변종 정확도 (`tools/pack_rabit_fs.py`) |
 | `spinquant_area_report.md` | baseline 대비 면적·타이밍, 모듈별 분해, 경계·carry chain·처리량 스윕 |

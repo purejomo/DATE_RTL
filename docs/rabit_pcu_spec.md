@@ -4,7 +4,13 @@ Bank-attached PIM 연산기. RaBiT 2-bit residual binarization 정밀도의
 **projection layer GEMV 전용** 데이터패스이며, HBM-PIM (ISCA'21) 스타일
 16-lane FP16 SIMD 연산부를 baseline 으로 삼는다.
 
-- RTL: [rtl/4_rabit/](../rtl/4_rabit/)
+- RTL: [rtl/4_rabit/](../rtl/4_rabit/) — 이 명세가 기술하는 축① (base)
+  - 축② (acc16): [rtl/4_rabit_acc16/](../rtl/4_rabit_acc16/) — §7 참고
+  - 축③ (dequant_rne): [rtl/4_rabit_dequant_rne/](../rtl/4_rabit_dequant_rne/)
+    — 구 `4_rabit_fullscale`. h·g 스케일까지 PCU 안에서 처리하고 binary16 을
+    내보낸다. 자체 README 와
+    [results/designs/rabit_fs_report.md](../results/designs/rabit_fs_report.md)
+    참고
 - Packer: [tools/pack_rabit.py](../tools/pack_rabit.py)
 - Golden model: [verif/models/rabit_model.py](../verif/models/rabit_model.py)
 - 회귀: `cd verif && make TEST=rabit_pcu` (전체는 `make`)
@@ -377,6 +383,40 @@ WR 과 RD 는 같은 column command slot 을 쓰므로 동시에 valid 일 수 �
 
 검증과 합성의 기준 구성은 `MANT_W=12, SHIFTER_EN=1, NOUT_PER_WORD=8, NPATH=2`.
 
+### 7.1 축② (acc16) 구성
+
+비교의 축②는 `rtl/4_rabit_acc16` 이며, **RTL 은 이 디렉토리의 사본이고 바뀐 것은
+합성 wrapper 하나뿐이다** (`rabit_pcu_acc16`, `ACC_W=16, MANT_W=10,
+SHIFTER_EN=1, SHIFT_RND=1`). 세 값이 함께 움직이는 이유:
+
+- `MANT_W=10` 은 선택이 아니라 강제다. `rabit_align_shift` 가 `ACC_W > PSUM_W`
+  를 요구하고 `PSUM_W = MANT_W + 1 + clog2(16) = MANT_W + 5` 이므로 `MANT_W=12`
+  면 `PSUM_W=17 > 16` 이라 elaboration 이 죽는다 (`SHL_MAX = ACC_W - PSUM_W` 가
+  음수). `MANT_W=10` 이면 15 < 16.
+- `SHIFT_RND=1` 은 §10 P1 의 경로를 켠 것이다. RaBiT 는 정렬 우 shift 가 곧
+  비트를 버리는 지점이므로 "매 누산마다 RNE" 가 **새 로직 없이** 얻어진다.
+
+파생 폭도 따라 바뀐다: `BLK_W` 214 → 182, `NPATH*BLK_W` 428 → 364,
+`DRAIN_W = NOUT_PER_WORD*ACC_W` 256 → 128.
+
+**k 깊이 제약.** 한 chunk 가 최대 `NIN * 2**MANT_W = 16384` 누산 LSB 를
+기여하고 `din=4096` 이면 256 chunk 이므로 최악에 23 bit 이 필요하다. 16-bit
+누산기는 여기서 clamp 한다. 실측 (`tools/rabit_accuracy.py`, 5 seed):
+
+| shape | 구성 | PCU rel err (mean) | worst seed | sat |
+|---|---|---:|---:|:--:|
+| 4096x4096 | MANT_W 10, shifter on, ACC_W 32 | 3.317e-03 | 4.994e-03 | no |
+| 4096x4096 | acc16 (MANT_W 10, RNE, ACC_W 16) | 7.622e-02 | 2.756e-01 | **yes** |
+| 11008x4096 | MANT_W 10, shifter on, ACC_W 32 | 2.838e-03 | 3.458e-03 | no |
+| 11008x4096 | acc16 (MANT_W 10, RNE, ACC_W 16) | 1.665e-01 | 2.973e-01 | **yes** |
+
+`verif` 회귀 (`TEST=rabit_pcu_acc16`) 는 k = 1024 로 돈다. 그 깊이까지는 오차가
+MANT_W 10 양자화 바닥 (~9e-4) 에 평평하게 붙어 있고, k = 2048 에서 4.9e-2,
+k = 4096 에서 1.8e-1 로 꺾인다. RTL 은 어느 깊이에서도 golden model 과
+bit-exact 로 일치하고 `status_sticky_o[0]` 이 saturation 을 보고하므로,
+이것은 결함이 아니라 **이 설계점의 성질**이다. 면적 절감 (45,254 → 32,209 um2,
+250 MHz) 의 대가가 표현 가능한 k 깊이다.
+
 ---
 
 ## 8. 검증
@@ -391,6 +431,8 @@ WR 과 RD 는 같은 column command slot 을 쓰므로 동시에 valid 일 수 �
 | `rabit_pcu_m10` | `rabit_pcu_m10` | 같은 것, MANT_W 10 |
 | `rabit_pcu_noshift` | `rabit_pcu_noshift` | 같은 것, SHIFTER_EN 0 |
 | `rabit_pcu_m10_noshift` | `rabit_pcu_m10_noshift` | 같은 것, 두 노브 동시 |
+| `rabit_pcu_acc16` | `rabit_pcu_acc16` | 축②. `ACC_W` 16 · `MANT_W` 10 · `SHIFT_RND` 1, k = 1024 (§7.1) |
+| `rabit_fs`, `rabit_fs_pipe`, `rabit_fs_h16` | `rabit_pcu_fs*` | 축③. h·x 곱과 g 역양자화까지 PCU 에서 수행, 최종 binary16 y 를 bit-정합 대조 |
 
 `rabit_pe` 와 `rabit_pcu*` 는 설계 자체의 assertion (`RABIT_ASSERTIONS`) 을 켜고
 돈다. PE 의 assertion 은 4:2 tree 의 modulo 연산 결과를 매 cycle 정확한
@@ -464,9 +506,10 @@ AAM barrier 타이밍에 영향을 주므로 구현하지 않고 제안으로만
 
 ---
 
-## 10. 제안 (구현하지 않음)
+## 10. 제안
 
-스펙 §9 에 따라 대안은 기록만 한다.
+스펙 §9 에 따라 대안은 기록만 한다 — **P1 만 예외로, 축②에서 실제로 켜져
+있다** (§7.1). 나머지는 축①에서도 축②에서도 구현하지 않았다.
 
 **P1. 정렬 우 shift 의 RNE.** 스펙이 "산술 shift" 라고 못박은 결과 chunk 마다
 평균 -0.5 LSB 의 **단방향** 편향이 쌓인다. din = 4096 이면 256 chunk 이므로
@@ -485,7 +528,12 @@ din = 4096, dout = 64, MANT_W 12 에서 seed 별 실측:
 **RNE 를 켜면 오차가 shift 깊이와 무관하게 평평해진다** (1.5~2.0e-4). 즉 지금
 보이는 4.8 배 산포는 정밀도 손실이 아니라 순전히 편향이다. 비용은 PE 당 34-bit
 barrel shifter 와 18-bit 증분 하나. `SHIFT_RND=1` 로 켤 수 있고 `rabit_align`
-테스트가 두 모드를 함께 검증하지만, 스펙을 따라 기본값은 0 이다.
+테스트가 두 모드를 함께 검증하지만, 스펙을 따라 **축①의 기본값은 0 이다.**
+
+**축②에서는 이미 켜져 있다.** `rtl/4_rabit_acc16` 은 `SHIFT_RND=1` 로 고정한다
+(§7.1). 16-bit 누산기에서는 버려지는 비트가 훨씬 많아 단방향 편향을 그대로 둘
+수 없고, 정렬기에 경로가 이미 있으므로 새 로직 없이 얻어진다. 즉 P1 은
+"구현하지 않음" 이 아니라 "축①에서는 기본값이 아니고 축②에서는 필수" 다.
 
 E0 가 max e_ent 로 잡히는 한 최악의 경우에도 양자화 오차(약 3e-1)의 1/70
 수준이라 기본 구성 그대로도 문제는 없다. 다만 din 이 더 깊어지거나 활성값
@@ -517,6 +565,22 @@ E0 가 max e_ent 로 잡히는 한 최악의 경우에도 양자화 오차(약 3
 | 타이밍 | 250 MHz slack +1.16 ns (MET) / 500 MHz -0.04 ns |
 | PCU 상대오차 (MANT_W 12) | 7.6e-4 ~ 3.8e-3 (din 4096, `mean(E0-e_ent)` 에 따라) |
 | 양자화 상대오차 | 약 3e-1 — PCU 오차보다 **두~세 자릿수** 크다 |
+
+세 축을 나란히 놓으면 (250 MHz, 같은 합성 경계):
+
+| 축 | top | 면적 (um2) | ① 대비 | DFF |
+|---|---|---:|---:|---:|
+| ① base | `rabit_pcu` | 45,254 | — | 2208 |
+| ② acc16 | `rabit_pcu_acc16` | 32,209 | **-28.8 %** | 1168 |
+| ③ dequant_rne | `rabit_pcu_fs` | 93,522 | +106.7 % | 4208 |
+
+②의 절감이 다른 설계군보다 큰 것은 누산기 배열이 이 경계 안 최대 storage 이기
+때문이다 (64 x 32b → 64 x 16b). 대신 표현 가능한 k 깊이가 줄어든다 — §7.1.
+
+③에는 다른 설계군의 ③에 없는 **write 경로 h 스케일 유닛** (fp16 x fp8 곱 16 개
++ pack 1 개) 이 포함돼 있어 축 간 비교에서 RaBiT 행이 과다 계상된다. 해당 블록은
+`rabit_fs_blk_hscale_250` 으로 따로 합성돼 있으므로 (20,651 um2) 추정하지 않고
+빼면 된다.
 
 핵심은 마지막 두 줄이다. 고정소수점 데이터패스가 만드는 오차는 residual
 binarization 자체의 오차보다 최소 두 자릿수 작으므로, 이 PCU 는 RaBiT 정확도에
