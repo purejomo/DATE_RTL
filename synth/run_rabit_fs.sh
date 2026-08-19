@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 # Synthesize the full-scale RaBiT PCU rows without touching the other designs.
 #
+# These are RaBiT's axis-3 (dequant_rne) rows of the three-axis comparison, so
+# the directory is rtl/4_rabit_dequant_rne. The label, top and file names keep
+# the historical `fs` spelling: verif/models/rabit_fs_model.py,
+# synth/build_rabit_fs_report.py and the results/ artefact names all key off
+# them, and renaming would invalidate the area history.
+#
+# Caveat for the axis-3 comparison, also recorded in that directory's README:
+# unlike the other axis-3 designs this one contains the write-path h scale unit
+# on top of the drain-path dequantization, so the RaBiT axis-3 area is
+# over-counted by the rabit_fs_blk_hscale_* contribution. That block is
+# synthesized on its own below, so the over-count can be subtracted rather than
+# estimated.
+#
 #   ./run_rabit_fs.sh           every full-scale row and the per-module breakdown
 #   ./run_rabit_fs.sh main      only the delivered configuration
 #
@@ -28,7 +41,7 @@ set -euo pipefail
 HERE="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
 BASE_RTL="${ROOT}/rtl/4_rabit"
-FS_RTL="${ROOT}/rtl/4_rabit_fullscale"
+FS_RTL="${ROOT}/rtl/4_rabit_dequant_rne"
 OUT="${ROOT}/build"
 RESULTS="${ROOT}/results"
 

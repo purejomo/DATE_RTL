@@ -9,6 +9,14 @@ The one exception is the v1 reference in section 2. v1 is the previous RTL
 re-measured by this repository as it stands; the numbers below were taken by
 restoring rtl/2_awq_p3llm_8pe from git and running the same flow at the same
 period. They are recorded as constants rather than silently recomputed.
+
+Both PCU rows are now v2. The sixteen-PE build used to be the v1 broadcast
+contract; rtl/2_awq_p3llm_16pe_v2 gives it the same one-zero-point-per-PE
+fan-out the eight-PE build has, which is the layout AutoAWQ actually stores.
+That changes the sixteen-PE row's measured area, so a PCU16 number quoted from
+before that conversion is not comparable with one produced now. The label
+int4bf16_pcu_top_pcu500 is unchanged, and results/area.csv merges by label, so
+re-running synth/run_all.sh overwrites the stale value in place.
 """
 
 from __future__ import annotations
@@ -31,7 +39,7 @@ PCU16 = "int4bf16_pcu_top_pcu500"
 # Rows quoted for context, all measured at the same boundary.
 CONTEXT = (
     (DELIVERED, "AWQ PCU v2, 8 PE x 4 way", 32),
-    (PCU16, "AWQ PCU v1, 16 PE x 4 way", 64),
+    (PCU16, "AWQ PCU v2, 16 PE x 4 way", 64),
     ("p3llm_pcu_500", "P3-LLM PCU, FP4/FP8, 16 PE x 4 way", 64),
     ("spinquant_pcu_500", "SpinQuant W4A4 PCU, 16 PE x 4 way", 64),
     (BASELINE, "HBM-PIM FP16 SIMD 16 lane", 16),
@@ -167,7 +175,7 @@ def main() -> None:
     add("|---|---|---:|---:|---:|---:|---:|---:|")
     for label, name, _ in ((BASELINE, "HBM-PIM FP16 SIMD 16 lane", 0),
                            (DELIVERED, "**AWQ PCU v2, 8 PE x 4 way**", 0),
-                           (PCU16, "AWQ PCU v1, 16 PE x 4 way", 0)):
+                           (PCU16, "AWQ PCU v2, 16 PE x 4 way", 0)):
         if label not in area:
             continue
         row = area[label]
@@ -182,6 +190,10 @@ def main() -> None:
     add("")
     if PCU16 in area:
         ratio = float(area[PCU16]["area_um2"]) / v2
+        add("두 판 모두 v2 계약이다 — `i_weight_zp` 이 PE 당 독립 4-bit 이며, 16 PE 판의")
+        add("포트는 4-bit 이 아니라 64-bit 이다. 아래 16 PE 면적은 v2 로 전환한 뒤의 값이라")
+        add("v1 시절 인용치와 직접 비교할 수 없다.")
+        add("")
         add("8 PE 판은 곱셈기 32 개로 baseline SIMD 의 32-multiplier 구성과 곱셈기 수를 맞춘")
         add(f"행이다. 16 PE 판과의 면적비가 1:{ratio:.2f} 로 정확히 2 배가 아닌 것은 공유 정렬기")
         add("(`int4float_align` 4 개) 가 `NUM_PES` 를 따라 줄지 않기 때문이다 — MAC 당 정렬")

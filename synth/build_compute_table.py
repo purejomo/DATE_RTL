@@ -3,8 +3,10 @@
 The table this feeds is about arithmetic, so every row is synthesized at a
 boundary that contains no register file, no control and no buffers.
 
-Every row now includes its accumulator, at the same 32-bit width and the same
-four registered stages:
+Every row includes its accumulator. The base rows all use the same 32-bit
+width and the same four registered stages; the acc16 rows deliberately do not,
+because narrowing that accumulator is what they exist to price. The accumulator
+width is stated per row rather than assumed.
 
   * The HBM-PIM baseline is a SIMD row of MAC lanes. Each lane multiplies at
     16-bit float and accumulates at binary32 into a register of its own. It
@@ -79,7 +81,7 @@ ROWS = [
     # Same 64-MAC raw PCU plus one time-multiplexed dequant pipeline.  The
     # shared scale multipliers are metadata/post-processing hardware and do not
     # increase the accepted low-precision GEMV MAC count.
-    ("p3llm",   "FP4/FP8->FP16", "P3-LLM PCU+DQ", 64,
+    ("p3llm",   "FP4/FP8->FP8", "P3-LLM PCU+DQ", 64,
      "p3llm_pcu_dequant_500",    64, 16, 64, 500, True),
 
     # RaBiT is the one row where the multiplier count and MAC/cycle diverge, so
@@ -130,6 +132,42 @@ ROWS = [
     # work. results/designs/spinquant_area_report.md prices both.
     ("spinquant", "INT4/INT4", "P3-LLM PCU", 64,
      "spinquant_pcu_500",        64, 16, 64, 500, True),
+
+    # ---- axis 2: narrowed accumulator ---------------------------------
+    #
+    # Same organization, same multiplier count, same MAC/cycle as the base row
+    # of each family: the multipliers, the alignment/decoders and the
+    # compressor tree are bit-identical, and only the accumulator moves from 32
+    # bits to 16 with an RNE narrow ahead of it. ``adders`` is unchanged
+    # because it counts architectural accumulator *lanes*, not their width; the
+    # width shows up in the accumulator column and in the sequential area.
+    #
+    # RaBiT's acc16 point also drops MANT_W from 12 to 10. That is forced, not
+    # chosen: rabit_align_shift requires ACC_W > PSUM_W = MANT_W + 5, so a
+    # 16-bit accumulator cannot carry a 12-bit mantissa. The precision column
+    # says so.
+    ("awq",     "INT4/BF16", "P3-LLM PCU",  32,
+     "int4bf16_pcu32_acc16_500",   32,  8, 32, 500, True),
+    ("awq",     "INT4/BF16", "P3-LLM PCU",  64,
+     "int4bf16_pcu_top_acc16_500", 64, 16, 64, 500, True),
+    ("p3llm",   "FP4/FP8",   "P3-LLM PCU",  64,
+     "p3llm_pcu_acc16_500",        64, 16, 64, 500, True),
+    ("rabit",   "2-bit RB/FP16 m10", "RaBiT PCU", 128,
+     "rabit_pcu_acc16_250",         0,  8, 128, 250, True),
+
+    # ---- axis 3: dequantization inside the PU -------------------------
+    #
+    # The raw PCU is untouched and still drains its INT32 accumulators; what is
+    # added is one shared, time-multiplexed engine (a fixed32 x bfloat16
+    # multiplier, a binary32 accumulator adder, and a final RNE pack to
+    # bfloat16). Like the p3llm_pcu_dequant_500 row above, those shared
+    # multipliers are post-processing hardware and do not increase the accepted
+    # low-precision GEMV MAC count, so ``muls`` and ``mac_cyc`` stay at the base
+    # row's values and um2/MAC stays comparable.
+    ("awq",     "INT4/BF16->BF16", "P3-LLM PCU+DQ",  32,
+     "int4bf16_pcu32_dq_500",      32,  8, 32, 500, True),
+    ("awq",     "INT4/BF16->BF16", "P3-LLM PCU+DQ",  64,
+     "int4bf16_pcu_top_dq_500",    64, 16, 64, 500, True),
 ]
 
 

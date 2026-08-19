@@ -5,7 +5,9 @@ Bank-attached PIM 연산기. AutoAWQ W4G128 weight 와 16-bit float activation �
 피연산자 형식만 바꾼 비교 행이다.
 
 - RTL: [rtl/2_awq_p3llm_8pe_v2/](../rtl/2_awq_p3llm_8pe_v2/) (8 PE, v2),
-  [rtl/2_awq_p3llm_16pe/](../rtl/2_awq_p3llm_16pe/) (16 PE, v1)
+  [rtl/2_awq_p3llm_16pe_v2/](../rtl/2_awq_p3llm_16pe_v2/) (16 PE, v2).
+  v1 broadcast-nibble ZP 빌드는 삭제됐다 — 두 빌드 모두 PE별 독립 4-bit ZP다.
+  누산 축 변형은 `*_acc16`, PU 내 dequant 변형은 `*_dequant_rne` 디렉토리
 - Golden model: [verif/models/int4float_pcu_model.py](../verif/models/int4float_pcu_model.py)
 - 회귀: `cd verif && make TEST=pcu_bf16_32` (전체는 `make`)
 - 합성: `cd synth && ./run_all.sh synth`

@@ -7,10 +7,30 @@
 #   ./run_all.sh table        rebuild the table from existing results
 #
 # Every row is measured at the same arithmetic boundary: multipliers, adders,
-# and the 32-bit accumulator are included; register files, buffers, control,
-# and bank interfaces are excluded. The HBM-PIM baseline is a SIMD row and uses
-# one binary32 accumulator per lane; every other row is P3-LLM-organized and
-# keeps its fixed-point accumulator inside the processing elements.
+# and the accumulator are included; register files, buffers, control, and bank
+# interfaces are excluded. The HBM-PIM baseline is a SIMD row and uses one
+# binary32 accumulator per lane; every other row is P3-LLM-organized and keeps
+# its accumulator inside the processing elements.
+#
+# Each design family is measured along up to three axes, so the accumulator
+# width is no longer the same on every row:
+#
+#   (1) base          32-bit fixed-point accumulation, raw integer output.
+#                     The rows that existed before this sweep.
+#   (2) acc16         every partial sum is RNE-narrowed to 16 bits before it
+#                     is accumulated, and the accumulator holds 16 bits.
+#                     Nothing ahead of the accumulator changes, so the delta
+#                     against (1) prices the accumulator alone.
+#   (3) dequant_rne   32-bit accumulation, then dequantization inside the PU,
+#                     ending in the design family's activation precision:
+#                     bfloat16 for AWQ, FP8-E4M3 for P3-LLM, binary16 for
+#                     RaBiT. The delta against (1) prices moving dequant off
+#                     the host.
+#
+# Each axis lives in its own RTL directory with its own top module name, and
+# both of those are load-bearing: run_block_synth.sh writes generated/${TOP}.v
+# and do_power writes ${top}_power.rpt, so two rows sharing a top name would
+# overwrite each other's results.
 set -euo pipefail
 
 HERE="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,10 +53,14 @@ HBMPIM_SIMD_SOURCES=(
 # int4float_pcu/pe/align, so the two source sets must never be concatenated:
 # doing so would define those three modules twice.
 #
-# The eight-PE build is v2: i_weight_zp is one four-bit zero point per output
-# PE (NUM_PES*4 bits) instead of one broadcast nibble, which is the layout
-# AutoAWQ actually stores. The sixteen-PE build is still the v1 broadcast
-# contract -- that is why the two tops differ in port width.
+# Both builds are v2: i_weight_zp is one four-bit zero point per output PE
+# (NUM_PES*4 bits) instead of one broadcast nibble, which is the layout AutoAWQ
+# actually stores. The v1 broadcast contract is gone; the sixteen-PE port is
+# therefore 64 bits rather than 4, and this row's area moved when it converted.
+#
+# The _acc16 and _dequant_rne directories are further copies of the same three
+# modules, so they are separate source sets for the same reason: concatenating
+# any two of them would define int4float_pcu/pe/align more than once.
 PCU8_SOURCES=(
     "${RTL}/2_awq_p3llm_8pe_v2/int4float_align.v"
     "${RTL}/2_awq_p3llm_8pe_v2/int4float_pe.v"
@@ -47,12 +71,61 @@ PCU8_SOURCES=(
 )
 
 PCU16_SOURCES=(
-    "${RTL}/2_awq_p3llm_16pe/int4float_align.v"
-    "${RTL}/2_awq_p3llm_16pe/int4float_pe.v"
-    "${RTL}/2_awq_p3llm_16pe/int4float_pcu.v"
-    "${RTL}/2_awq_p3llm_16pe/int4bf16_pcu_top.v"
-    "${RTL}/2_awq_p3llm_16pe/int4_asym_decode.v"
-    "${RTL}/2_awq_p3llm_16pe/compressor_4to2.sv"
+    "${RTL}/2_awq_p3llm_16pe_v2/int4float_align.v"
+    "${RTL}/2_awq_p3llm_16pe_v2/int4float_pe.v"
+    "${RTL}/2_awq_p3llm_16pe_v2/int4float_pcu.v"
+    "${RTL}/2_awq_p3llm_16pe_v2/int4bf16_pcu_top.v"
+    "${RTL}/2_awq_p3llm_16pe_v2/int4_asym_decode.v"
+    "${RTL}/2_awq_p3llm_16pe_v2/compressor_4to2.sv"
+)
+
+# Axis 2: the same two builds with a 16-bit accumulator. Only int4float_pe.v
+# and the top differ from the sets above.
+PCU8_ACC16_SOURCES=(
+    "${RTL}/2_awq_p3llm_8pe_v2_acc16/int4float_align.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_acc16/int4float_pe.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_acc16/int4float_pcu.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_acc16/int4bf16_pcu32_acc16.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_acc16/int4_asym_decode.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_acc16/compressor_4to2.sv"
+)
+
+PCU16_ACC16_SOURCES=(
+    "${RTL}/2_awq_p3llm_16pe_v2_acc16/int4float_align.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_acc16/int4float_pe.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_acc16/int4float_pcu.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_acc16/int4bf16_pcu_top_acc16.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_acc16/int4_asym_decode.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_acc16/compressor_4to2.sv"
+)
+
+# Axis 3: the unchanged raw PCU plus one shared dequantization engine --
+# a fixed32 x bfloat16 multiplier, a binary32 accumulator adder, and a final
+# RNE pack to bfloat16. sv2v --top prunes the FP16 tops that sit alongside.
+PCU8_DQ_SOURCES=(
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/int4float_align.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/int4float_pe.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/int4float_pcu.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/int4_asym_decode.v"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/compressor_4to2.sv"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/awq_dq_fixed32_float16_mul_pipe.sv"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/awq_dq_fp32_add_pipe.sv"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/awq_dq_fp32_pack_pipe.sv"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/int4float_pcu_dq.sv"
+    "${RTL}/2_awq_p3llm_8pe_v2_dequant_rne/int4bf16_pcu32_dq.v"
+)
+
+PCU16_DQ_SOURCES=(
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/int4float_align.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/int4float_pe.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/int4float_pcu.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/int4_asym_decode.v"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/compressor_4to2.sv"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/awq_dq_fixed32_float16_mul_pipe.sv"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/awq_dq_fp32_add_pipe.sv"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/awq_dq_fp32_pack_pipe.sv"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/int4float_pcu_dq.sv"
+    "${RTL}/2_awq_p3llm_16pe_v2_dequant_rne/int4bf16_pcu_top_dq.v"
 )
 
 P3LLM_SOURCES=(
@@ -67,24 +140,39 @@ P3LLM_SOURCES=(
     "${RTL}/3_p3llm/compressor_4to2.sv"
 )
 
+# P3-LLM axis 2: the same raw PCU with a 16-bit accumulator. Only p3llm_pe.sv
+# and the top differ, and the package keeps its name because the source sets
+# are compiled separately.
+P3LLM_ACC16_SOURCES=(
+    "${RTL}/3_p3llm_acc16/p3llm_pkg.sv"
+    "${RTL}/3_p3llm_acc16/p3llm_pcu_acc16.sv"
+    "${RTL}/3_p3llm_acc16/p3llm_pe.sv"
+    "${RTL}/3_p3llm_acc16/fixed_mul_shift.sv"
+    "${RTL}/3_p3llm_acc16/fp8_e4m3_decoder.sv"
+    "${RTL}/3_p3llm_acc16/fp8_s0e4m4_decoder.sv"
+    "${RTL}/3_p3llm_acc16/bitmod4_decoder.sv"
+    "${RTL}/3_p3llm_acc16/int4_asym_decoder.sv"
+    "${RTL}/3_p3llm_acc16/compressor_4to2.sv"
+)
+
 # P3-LLM with one PCU-shared post-accumulator dequantization pipeline.  Keep
 # this source set separate from the paper baseline: both directories define the
 # same raw p3llm_* modules, while only this set adds the fixed32/FP scale path,
-# cross-group FP32 state, and final FP16 output packing.
+# cross-group FP32 state, and final FP8-E4M3 output packing.
 P3LLM_DEQUANT_SOURCES=(
-    "${RTL}/3_p3llm_with_dequant/p3llm_pkg.sv"
-    "${RTL}/3_p3llm_with_dequant/p3llm_pcu.sv"
-    "${RTL}/3_p3llm_with_dequant/p3llm_pe.sv"
-    "${RTL}/3_p3llm_with_dequant/fixed_mul_shift.sv"
-    "${RTL}/3_p3llm_with_dequant/fp8_e4m3_decoder.sv"
-    "${RTL}/3_p3llm_with_dequant/fp8_s0e4m4_decoder.sv"
-    "${RTL}/3_p3llm_with_dequant/bitmod4_decoder.sv"
-    "${RTL}/3_p3llm_with_dequant/int4_asym_decoder.sv"
-    "${RTL}/3_p3llm_with_dequant/compressor_4to2.sv"
-    "${RTL}/3_p3llm_with_dequant/p3llm_dequant_fixed32_fp16_mul_pipe.sv"
-    "${RTL}/3_p3llm_with_dequant/p3llm_dequant_fp32_add_pipe.sv"
-    "${RTL}/3_p3llm_with_dequant/p3llm_dequant_fp32_fp16_mul_pack_pipe.sv"
-    "${RTL}/3_p3llm_with_dequant/p3llm_pcu_dequant.sv"
+    "${RTL}/3_p3llm_dequant_rne/p3llm_pkg.sv"
+    "${RTL}/3_p3llm_dequant_rne/p3llm_pcu.sv"
+    "${RTL}/3_p3llm_dequant_rne/p3llm_pe.sv"
+    "${RTL}/3_p3llm_dequant_rne/fixed_mul_shift.sv"
+    "${RTL}/3_p3llm_dequant_rne/fp8_e4m3_decoder.sv"
+    "${RTL}/3_p3llm_dequant_rne/fp8_s0e4m4_decoder.sv"
+    "${RTL}/3_p3llm_dequant_rne/bitmod4_decoder.sv"
+    "${RTL}/3_p3llm_dequant_rne/int4_asym_decoder.sv"
+    "${RTL}/3_p3llm_dequant_rne/compressor_4to2.sv"
+    "${RTL}/3_p3llm_dequant_rne/p3llm_dequant_fixed32_fp16_mul_pipe.sv"
+    "${RTL}/3_p3llm_dequant_rne/p3llm_dequant_fp32_add_pipe.sv"
+    "${RTL}/3_p3llm_dequant_rne/p3llm_dequant_fp32_fp8_mul_pack_pipe.sv"
+    "${RTL}/3_p3llm_dequant_rne/p3llm_pcu_dequant.sv"
 )
 
 # RaBiT 2-bit residual binarization. No multiplier at all, so the arithmetic
@@ -103,6 +191,23 @@ RABIT_BASE_SOURCES=(
     "${RTL}/4_rabit/rabit_pcu_ctrl.sv"
     "${RTL}/4_rabit/rabit_pcu_top.sv"
     "${RTL}/4_rabit/rabit_pcu_synth.sv"
+)
+
+# RaBiT axis 2. rtl/4_rabit_acc16 is a full copy of rtl/4_rabit whose only
+# difference is the synthesis wrapper: ACC_W 16, MANT_W 10 and SHIFT_RND 1.
+# MANT_W has to move with ACC_W because rabit_align_shift requires
+# ACC_W > PSUM_W = MANT_W + 5, and SHIFT_RND turns on the aligner's existing
+# round-to-nearest-even path, which is where RaBiT discards bits. Do not mix
+# these files with RABIT_BASE_SOURCES: both define every rabit_* module.
+RABIT_ACC16_SOURCES=(
+    "${RTL}/4_rabit_acc16/rabit_compressor_4to2.sv"
+    "${RTL}/4_rabit_acc16/rabit_cvt_fp16_blk.sv"
+    "${RTL}/4_rabit_acc16/rabit_align_shift.sv"
+    "${RTL}/4_rabit_acc16/rabit_pe.sv"
+    "${RTL}/4_rabit_acc16/rabit_acc_regfile.sv"
+    "${RTL}/4_rabit_acc16/rabit_pcu_ctrl.sv"
+    "${RTL}/4_rabit_acc16/rabit_pcu_top.sv"
+    "${RTL}/4_rabit_acc16/rabit_pcu_synth.sv"
 )
 
 # SpinQuant W4A4. A pure integer dot-product engine: signed INT4 weights out of
@@ -141,6 +246,25 @@ ROWS=(
     # tCCD_L build is a sweep point in run_spinquant.sh, not a row here: both
     # share the top name spinquant_pcu and do_power writes one report per top.
     "spinquant_pcu_500       : spinquant_pcu        : 2.0 : spinquant"
+
+    # ---- axis 2: narrowed accumulator --------------------------------
+    #
+    # Each of these pairs with the base row directly above its family. The
+    # tops are distinct module names, so no two rows share a generated
+    # netlist or a power report.
+    "int4bf16_pcu32_acc16_500   : int4bf16_pcu32_acc16   : 2.0 : pcu8_acc16"
+    "int4bf16_pcu_top_acc16_500 : int4bf16_pcu_top_acc16 : 2.0 : pcu16_acc16"
+    "p3llm_pcu_acc16_500        : p3llm_pcu_acc16        : 2.0 : p3llm_acc16"
+    # RaBiT is measured at 250 MHz for the same reason the base row is: the
+    # 500 MHz build of the base variant misses setup on the convert path.
+    "rabit_pcu_acc16_250        : rabit_pcu_acc16        : 4.0 : rabit_acc16"
+
+    # ---- axis 3: dequantization inside the PU ------------------------
+    #
+    # p3llm_pcu_dequant_500 above is P3-LLM's axis-3 row; RaBiT's lives in
+    # run_rabit_fs.sh with the rest of the full-scale sweep.
+    "int4bf16_pcu32_dq_500      : int4bf16_pcu32_dq      : 2.0 : pcu8_dq"
+    "int4bf16_pcu_top_dq_500    : int4bf16_pcu_top_dq    : 2.0 : pcu16_dq"
 )
 
 field() { echo "$1" | cut -d: -f"$2" | tr -d ' '; }
@@ -150,9 +274,15 @@ sources_for() {
         hbmpim_simd) printf '%s\n' "${HBMPIM_SIMD_SOURCES[@]}" ;;
         pcu8)        printf '%s\n' "${PCU8_SOURCES[@]}" ;;
         pcu16)       printf '%s\n' "${PCU16_SOURCES[@]}" ;;
+        pcu8_acc16)  printf '%s\n' "${PCU8_ACC16_SOURCES[@]}" ;;
+        pcu16_acc16) printf '%s\n' "${PCU16_ACC16_SOURCES[@]}" ;;
+        pcu8_dq)     printf '%s\n' "${PCU8_DQ_SOURCES[@]}" ;;
+        pcu16_dq)    printf '%s\n' "${PCU16_DQ_SOURCES[@]}" ;;
         p3llm)       printf '%s\n' "${P3LLM_SOURCES[@]}" ;;
+        p3llm_acc16) printf '%s\n' "${P3LLM_ACC16_SOURCES[@]}" ;;
         p3llm_dequant) printf '%s\n' "${P3LLM_DEQUANT_SOURCES[@]}" ;;
         rabit)       printf '%s\n' "${RABIT_BASE_SOURCES[@]}" ;;
+        rabit_acc16) printf '%s\n' "${RABIT_ACC16_SOURCES[@]}" ;;
         spinquant)   printf '%s\n' "${SPINQUANT_SOURCES[@]}" ;;
     esac
 }
