@@ -36,6 +36,30 @@ def wrap_signed(value: int, width: int) -> int:
     return wrapped - (1 << width) if wrapped & sign else wrapped
 
 
+def narrow_rne(value: int, shift: int, width: int) -> int:
+    """RNE-narrow a signed value by ``shift`` bits, then saturate to ``width``.
+
+    This is the acc16 axis's stage-3 arithmetic (rtl/3_p3llm_acc16/p3llm_pe.sv,
+    and the same shape in the AWQ acc16 PEs)::
+
+        round_bit = x[n-1]; sticky = |x[n-2:0]
+        round_up  = round_bit & (sticky | x[n])      # tie -> even
+        y         = (x >>> n) + round_up
+
+    Python's ``>>`` on a negative integer floors, which is exactly what an
+    arithmetic right shift does, so the two agree bit for bit.
+    """
+
+    if shift <= 0:
+        return saturate_signed(value, width)
+    quotient = value >> shift
+    remainder = value - (quotient << shift)
+    halfway = 1 << (shift - 1)
+    if remainder > halfway or (remainder == halfway and (quotient & 1)):
+        quotient += 1
+    return saturate_signed(quotient, width)
+
+
 def saturate_signed(value: int, width: int) -> int:
     """Clamp ``value`` to the signed range rather than wrapping.
 

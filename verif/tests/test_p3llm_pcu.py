@@ -8,6 +8,12 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge
 
 from common import unpack_signed_bus
+
+# The acc16 axis (rtl/3_p3llm_acc16) narrows the 28-bit partial sum by ACC_RSH
+# with RNE before accumulating, and holds ACC_W bits. The defaults reproduce
+# the 32-bit base build.
+ACC_W = int(os.environ.get("P3LLM_ACC_W", "32"))
+ACC_RSH = int(os.environ.get("P3LLM_ACC_RSH", "0"))
 from p3llm_pcu_model import (
     LANES,
     NUM_PES,
@@ -106,7 +112,7 @@ async def run_pcu_stream(dut, transactions, count, model):
             f"out_valid mismatch at PCU stream cycle {cycle}"
         )
         if due is not None:
-            actual = unpack_signed_bus(int(dut.acc_out.value), 32, NUM_PES)
+            actual = unpack_signed_bus(int(dut.acc_out.value), ACC_W, NUM_PES)
             assert actual == due, (
                 f"PCU mismatch at cycle {cycle}\n"
                 f"actual  ={actual}\nexpected={due}"
@@ -219,7 +225,7 @@ async def test_pcu_regression(dut):
     cocotb.start_soon(Clock(dut.clk, 4, units="ns").start())
     await reset_pcu(dut)
 
-    model = PcuGolden()
+    model = PcuGolden(acc_bits=ACC_W, acc_rsh=ACC_RSH)
     directed = list(directed_transactions())
     await run_pcu_stream(dut, directed, len(directed), model)
 

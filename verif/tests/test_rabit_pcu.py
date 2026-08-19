@@ -25,7 +25,6 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge
 
 from rabit_model import (
-    ACC_W,
     NGROUP,
     NIN,
     NOUT_PER_WORD,
@@ -44,6 +43,11 @@ import pack_rabit  # noqa: E402
 
 MANT_W = int(os.environ.get("RABIT_MANT_W", "12"))
 SHIFTER_EN = int(os.environ.get("RABIT_SHIFTER_EN", "1"))
+# The acc16 build narrows the architectural accumulator and turns on the
+# aligner's existing round-to-nearest-even path. MANT_W has to come down with
+# it: rabit_align_shift requires ACC_W > PSUM_W = MANT_W + 5.
+ACC_W = int(os.environ.get("RABIT_ACC_W", "32"))
+SHIFT_RND = int(os.environ.get("RABIT_SHIFT_RND", "0"))
 TRACE = bool(os.environ.get("RABIT_TRACE"))
 BLK_W = NIN * (MANT_W + 1) + 6
 DRAIN_W = NOUT_PER_WORD * ACC_W
@@ -59,7 +63,12 @@ class Bench:
 
     def __init__(self, dut, e0: int):
         self.dut = dut
-        self.model = PcuGolden(mant_w=MANT_W, shifter_en=SHIFTER_EN)
+        self.model = PcuGolden(
+            mant_w=MANT_W,
+            shifter_en=SHIFTER_EN,
+            acc_w=ACC_W,
+            shift_rnd=SHIFT_RND,
+        )
         self.model.e0 = e0
         self.grf_bits = [0] * (2 * NPATH)
         self.grf_written = [False] * (2 * NPATH)
@@ -185,7 +194,9 @@ class Bench:
             )
             data = int(dut.drain_data_o.value)
             values = tuple(
-                signed_from_bits((data >> (pe * ACC_W)) & 0xFFFFFFFF, ACC_W)
+                signed_from_bits(
+                    (data >> (pe * ACC_W)) & ((1 << ACC_W) - 1), ACC_W
+                )
                 for pe in range(NOUT_PER_WORD)
             )
             beat = (
@@ -526,7 +537,8 @@ async def phase_gemv(dut, dout: int, din: int, seed: int, stall_prob: float):
     ) / (NPATH * chunks)
 
     dut._log.info(
-        f"GEMV {dout}x{din} seed {seed}: MANT_W {MANT_W} SHIFTER_EN "
+        f"GEMV {dout}x{din} seed {seed}: MANT_W {MANT_W} ACC_W {ACC_W} "
+        f"SHIFT_RND {SHIFT_RND} SHIFTER_EN "
         f"{SHIFTER_EN} E0 {e0} mean(E0-e_ent) {mean_shift:.2f} -> "
         f"relative error {rel:.3e} (bound {rel_bound:.3e})"
     )

@@ -13,8 +13,14 @@ statement for statement.
 
 The zero point is per output PE: AutoAWQ stores one zero point per output
 channel and group, so `transaction` takes either one nibble (the v1 broadcast
-contract still used by the 16-PE build) or one nibble per PE (the v2 contract
-of rtl/2_awq_p3llm_8pe_v2).
+contract, which no RTL in the tree implements any more) or one nibble per PE
+(the v2 contract both AWQ builds now use).
+
+`PcuModel` also covers the acc16 axis. With `acc_bits=16` the 4-lane partial
+sum is rounded to nearest, ties to even, by `acc_rsh` bits before it is
+accumulated, and the accumulator saturates at 16 bits -- mirroring
+rtl/2_awq_p3llm_*_acc16/int4float_pe.v statement for statement. The default
+`acc_bits=32, acc_rsh=0` reproduces the base build exactly.
 """
 
 from __future__ import annotations
@@ -111,6 +117,29 @@ def wrap_signed(value: int, bits: int = ACC_BITS) -> int:
     return value - (1 << bits) if value >> (bits - 1) else value
 
 
+def narrow_rne(value: int, shift: int, bits: int) -> int:
+    """RNE-narrow a signed partial sum by ``shift`` bits, then saturate.
+
+    Mirrors the acc16 PE's stage 3:
+
+        round_bit = x[n-1]; sticky = |x[n-2:0]
+        round_up  = round_bit & (sticky | x[n])      # tie -> even
+        y         = (x >>> n) + round_up
+
+    Python's ``>>`` on a negative int already floors, which is what an
+    arithmetic shift does, so the two agree bit for bit.
+    """
+
+    if shift <= 0:
+        return saturate_signed(value, bits)
+    quotient = value >> shift
+    remainder = value - (quotient << shift)
+    halfway = 1 << (shift - 1)
+    if remainder > halfway or (remainder == halfway and (quotient & 1)):
+        quotient += 1
+    return saturate_signed(quotient, bits)
+
+
 def saturate_signed(value: int, bits: int = ACC_BITS) -> int:
     """Clamp to the signed range instead of wrapping.
 
@@ -125,9 +154,18 @@ def saturate_signed(value: int, bits: int = ACC_BITS) -> int:
 class PcuModel:
     """One independent accumulator per PE, updated a tile at a time."""
 
-    def __init__(self, fmt: ActFormat, num_pes: int = NUM_PES) -> None:
+    def __init__(
+        self,
+        fmt: ActFormat,
+        num_pes: int = NUM_PES,
+        *,
+        acc_bits: int = ACC_BITS,
+        acc_rsh: int = 0,
+    ) -> None:
         self.fmt = fmt
         self.num_pes = num_pes
+        self.acc_bits = acc_bits
+        self.acc_rsh = acc_rsh
         self.acc = [0] * num_pes
 
     def reset(self) -> None:
@@ -169,7 +207,16 @@ class PcuModel:
                 aligned[lane] * decode_weight(weights[pe][lane], zero_points[pe])
                 for lane in range(LANES)
             )
-            if acc_clear:
+            if self.acc_rsh:
+                # acc16: narrow before the accumulator, not after.
+                narrowed = narrow_rne(partial, self.acc_rsh, self.acc_bits)
+                if acc_clear:
+                    self.acc[pe] = narrowed
+                elif acc_enable:
+                    self.acc[pe] = saturate_signed(
+                        self.acc[pe] + narrowed, self.acc_bits
+                    )
+            elif acc_clear:
                 # A cleared accumulator takes the sign-extended 28-bit partial,
                 # which cannot exceed 32 bits, so no clamping applies here.
                 self.acc[pe] = wrap_signed(partial)

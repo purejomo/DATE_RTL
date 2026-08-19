@@ -32,10 +32,10 @@ MAC_SOURCES := $(ARITH_SOURCES) \
                $(RTL)/1_hbmpim/hbmpim_fp16_mul.v \
                $(RTL)/1_hbmpim/hbmpim_fp16_mac_1_lane.v
 
-PCU_SOURCES := $(RTL)/2_awq_p3llm_16pe/compressor_4to2.sv \
-               $(RTL)/2_awq_p3llm_16pe/int4_asym_decode.v \
-               $(RTL)/2_awq_p3llm_16pe/int4float_align.v \
-               $(RTL)/2_awq_p3llm_16pe/int4float_pe.v
+PCU_SOURCES := $(RTL)/2_awq_p3llm_16pe_v2/compressor_4to2.sv \
+               $(RTL)/2_awq_p3llm_16pe_v2/int4_asym_decode.v \
+               $(RTL)/2_awq_p3llm_16pe_v2/int4float_align.v \
+               $(RTL)/2_awq_p3llm_16pe_v2/int4float_pe.v
 
 .PHONY: all arith mac align clean
 

@@ -6,9 +6,17 @@ against. Format, lane count and zero-point layout all come from the
 environment, so one test module covers every AWQ PCU row:
 
     PCU_NUM_PES    8 for the pcu32 tops, 16 for the pcu_top build
-    PCU_ZP_PER_PE  1 = one four-bit zero point per PE (v2, rtl/2_awq_p3llm_8pe_v2)
-                   0 = one nibble broadcast to every PE (v1, rtl/2_awq_p3llm_16pe)
+    PCU_ZP_PER_PE  1 = one four-bit zero point per PE (v2). Both AWQ builds
+                       use this: rtl/2_awq_p3llm_8pe_v2 and
+                       rtl/2_awq_p3llm_16pe_v2.
+                   0 = one nibble broadcast to every PE (v1). No RTL in the
+                       tree implements this any more -- the v1 build was
+                       deleted -- but the stimulus and model paths are kept so
+                       the contract stays documented and testable.
     PCU_FMT        bf16 or fp16
+    PCU_ACC_W      accumulator width: 32 for the base builds, 16 for acc16
+    PCU_ACC_RSH    RNE shift applied before accumulating; 0 for the base
+                   builds, 12 (BF16) or 15 (FP16) for acc16
 """
 
 from __future__ import annotations
@@ -28,6 +36,9 @@ SEED = 0x50435530
 LANES = 4
 NUM_PES = int(os.environ.get("PCU_NUM_PES", "16"))
 ZP_PER_PE = os.environ.get("PCU_ZP_PER_PE", "0") == "1"
+ACC_W = int(os.environ.get("PCU_ACC_W", "32"))
+ACC_RSH = int(os.environ.get("PCU_ACC_RSH", "0"))
+ACC_MASK = (1 << ACC_W) - 1
 LATENCY = 4          # accept edge to o_valid
 
 # bfloat16 encodings: zero, negative zero, the smallest subnormal, the
@@ -38,8 +49,8 @@ CORNERS = (0x0000, 0x8000, 0x0001, 0x007F, 0x0080, 0x3F80, 0xBF80,
            0x4000, 0x7F7F, 0x7F80, 0xFF80, 0x7FC0, 0x3F00, 0x4123)
 
 
-def signed32(value: int) -> int:
-    return value - (1 << 32) if value >> 31 else value
+def signed_acc(value: int) -> int:
+    return value - (1 << ACC_W) if value >> (ACC_W - 1) else value
 
 
 async def reset(dut):
@@ -56,7 +67,7 @@ async def reset(dut):
 @cocotb.test()
 async def test_random_tiles(dut) -> None:
     cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
-    model = PcuModel(FMT, NUM_PES)
+    model = PcuModel(FMT, NUM_PES, acc_bits=ACC_W, acc_rsh=ACC_RSH)
     rng = random.Random(SEED)
     await reset(dut)
     model.reset()
@@ -105,7 +116,7 @@ async def test_random_tiles(dut) -> None:
         )
         raw = int(dut.o_acc.value)
         for pe in range(NUM_PES):
-            got = signed32((raw >> (32 * pe)) & 0xFFFFFFFF)
+            got = signed_acc((raw >> (ACC_W * pe)) & ACC_MASK)
             assert got == expected[pe], (
                 f"iteration {iteration} PE {pe}: got {got}, "
                 f"expected {expected[pe]} (ref_exp={ref}, zp={zp})"

@@ -11,6 +11,7 @@ from p3llm_formats import (
     decode_fp8_e4m3,
     decode_fp8_s0e4m4,
     decode_int4_asym,
+    narrow_rne,
     saturate_signed,
     wrap_signed,
 )
@@ -124,7 +125,13 @@ class PcuGolden:
 
     accumulators: list[int]
 
-    def __init__(self) -> None:
+    def __init__(self, *, acc_bits: int = 32, acc_rsh: int = 0) -> None:
+        # acc_bits/acc_rsh select the acc16 axis (rtl/3_p3llm_acc16): the
+        # 28-bit partial sum is RNE-narrowed by acc_rsh before it reaches the
+        # accumulator, which then holds acc_bits and saturates. The defaults
+        # reproduce the 32-bit base build exactly.
+        self.acc_bits = acc_bits
+        self.acc_rsh = acc_rsh
         self.accumulators = [0] * NUM_PES
 
     def reset(self) -> None:
@@ -163,7 +170,16 @@ class PcuGolden:
                 zp_by_lane=zp_by_lane,
             )
             traces.append(trace)
-            if acc_clear:
+            if self.acc_rsh:
+                narrowed = narrow_rne(
+                    trace.partial_sum, self.acc_rsh, self.acc_bits
+                )
+                if acc_clear:
+                    next_acc[pe] = narrowed
+                elif acc_enable:
+                    next_acc[pe] = saturate_signed(
+                        self.accumulators[pe] + narrowed, self.acc_bits)
+            elif acc_clear:
                 next_acc[pe] = wrap_signed(trace.partial_sum, 32)
             elif acc_enable:
                 # p3llm_pe saturates rather than wrapping: an overflow used to

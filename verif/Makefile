@@ -16,9 +16,11 @@ VERIF := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 # spinquant PCU.
 TESTS := fp16_mul \
          pcu_bf16_32 pcu_fp16_32 pcu_bf16_64 \
-         p3llm_decoders p3llm_compressor p3llm_pe p3llm_pcu \
+         pcu_bf16_32_acc16 pcu_fp16_32_acc16 pcu_bf16_64_acc16 \
+         p3llm_decoders p3llm_compressor p3llm_pe p3llm_pcu p3llm_pcu_acc16 \
          rabit_cvt rabit_align rabit_pe rabit_acc \
          rabit_pcu rabit_pcu_m10 rabit_pcu_noshift rabit_pcu_m10_noshift \
+         rabit_pcu_acc16 \
          rabit_fs rabit_fs_pipe rabit_fs_h16 \
          p3llm_dequant_arith p3llm_dequant \
          awq_dequant_arith \
@@ -66,34 +68,48 @@ endif
 
 # --- PCU tests: full tile through the four-stage pipeline ------------------
 #
-# 8-PE 빌드와 16-PE 빌드는 rtl/2_awq_p3llm_8pe_v2, rtl/2_awq_p3llm_16pe 로 나뉘어
-# 있고 각자 int4float_pcu/pe/align 사본을 들고 있다. 따라서 한 번에 한쪽
+# 8-PE 빌드와 16-PE 빌드는 rtl/2_awq_p3llm_8pe_v2, rtl/2_awq_p3llm_16pe_v2 로
+# 나뉘어 있고 각자 int4float_pcu/pe/align 사본을 들고 있다. 따라서 한 번에 한쪽
 # 디렉토리만 컴파일한다. 두 벌을 함께 넣으면 세 모듈이 중복 정의된다.
 #
-# 두 빌드는 zero-point 계약이 다르다. 8-PE 는 v2 라서 `i_weight_zp` 이 PE 당
-# 4-bit (NUM_PES*4 = 32 bit) 이고, 16-PE 는 여전히 v1 broadcast nibble (4 bit)
-# 이다. testbench 는 PCU_ZP_PER_PE 로 어느 쪽인지 받아 stimulus 와 golden
-# model 을 함께 맞춘다.
+# 이제 두 빌드 모두 v2 계약이다: `i_weight_zp` 이 PE 당 독립 4-bit
+# (NUM_PES*4 bit) 이며, v1 broadcast nibble 빌드는 트리에서 삭제됐다.
+# testbench 는 PCU_ZP_PER_PE 로 계약을 받아 stimulus 와 golden model 을 함께
+# 맞추는데, 양쪽 계약을 모두 지원하므로 상수 1 을 주면 된다.
 
 PCU8_DIR  := $(RTL)/2_awq_p3llm_8pe_v2
-PCU16_DIR := $(RTL)/2_awq_p3llm_16pe
+PCU16_DIR := $(RTL)/2_awq_p3llm_16pe_v2
 
-ifneq ($(filter $(TEST),pcu_bf16_32 pcu_bf16_64 pcu_fp16_32),)
+PCU8_ACC16_DIR  := $(RTL)/2_awq_p3llm_8pe_v2_acc16
+PCU16_ACC16_DIR := $(RTL)/2_awq_p3llm_16pe_v2_acc16
+
+AWQ_PCU_TESTS := pcu_bf16_32 pcu_bf16_64 pcu_fp16_32 \
+                 pcu_bf16_32_acc16 pcu_bf16_64_acc16 pcu_fp16_32_acc16
+
+ifneq ($(filter $(TEST),$(AWQ_PCU_TESTS)),)
 MODULE          := test_int4float_pcu
 PCU_IS_8PE      := $(findstring _32,$(TEST))
+PCU_IS_ACC16    := $(findstring acc16,$(TEST))
 PCU_NUM_PES     := $(if $(PCU_IS_8PE),8,16)
-PCU_ZP_PER_PE   := $(if $(PCU_IS_8PE),1,0)
-PCU_DIR         := $(if $(PCU_IS_8PE),$(PCU8_DIR),$(PCU16_DIR))
+PCU_ZP_PER_PE   := 1
 PCU_FMT         := $(if $(findstring fp16,$(TEST)),fp16,bf16)
 PCU_SUFFIX      := $(if $(PCU_IS_8PE),pcu32,pcu_top)
-COCOTB_TOPLEVEL := int4$(PCU_FMT)_$(PCU_SUFFIX)
+# acc16 keeps the same PE count and format but narrows the accumulator. The
+# shift is the worst-case-safe value the RTL defaults to: 12 for bfloat16
+# (ALIGNED_W 17) and 15 for binary16 (ALIGNED_W 20). See int4float_pe.v.
+PCU_ACC_W       := $(if $(PCU_IS_ACC16),16,32)
+PCU_ACC_RSH     := $(if $(PCU_IS_ACC16),$(if $(findstring fp16,$(TEST)),15,12),0)
+PCU_DIR         := $(if $(PCU_IS_ACC16),\
+                     $(if $(PCU_IS_8PE),$(PCU8_ACC16_DIR),$(PCU16_ACC16_DIR)),\
+                     $(if $(PCU_IS_8PE),$(PCU8_DIR),$(PCU16_DIR)))
+COCOTB_TOPLEVEL := int4$(PCU_FMT)_$(PCU_SUFFIX)$(if $(PCU_IS_ACC16),_acc16,)
 VERILOG_SOURCES := $(PCU_DIR)/compressor_4to2.sv \
                    $(PCU_DIR)/int4_asym_decode.v \
                    $(PCU_DIR)/int4float_align.v \
                    $(PCU_DIR)/int4float_pe.v \
                    $(PCU_DIR)/int4float_pcu.v \
                    $(PCU_DIR)/$(COCOTB_TOPLEVEL).v
-export PCU_NUM_PES PCU_ZP_PER_PE PCU_FMT
+export PCU_NUM_PES PCU_ZP_PER_PE PCU_FMT PCU_ACC_W PCU_ACC_RSH
 endif
 
 # --- P3-LLM: decoders, compressor, PE, and the whole PCU ------------------
@@ -144,6 +160,33 @@ MODULE          := test_p3llm_pcu
 TESTCASE        := test_pcu_regression
 VERILOG_SOURCES := $(P3LLM_RTL) $(RTL)/3_p3llm/p3llm_pcu.sv
 EXTRA_ARGS      += --assert -DP3LLM_ASSERTIONS
+endif
+
+# The acc16 axis. rtl/3_p3llm_acc16 is a full copy of rtl/3_p3llm -- both
+# define p3llm_pkg and every p3llm_* module -- so the two are never compiled
+# together. ACC_RSH 16 is the RTL default: it is the smallest shift for which a
+# 128-element group cannot saturate in any op_mode, which is also "keep the top
+# 16 bits of the base build's accumulator". See p3llm_pe.sv for the derivation.
+
+P3LLM_ACC16_RTL := $(RTL)/3_p3llm_acc16/p3llm_pkg.sv \
+                   $(RTL)/3_p3llm_acc16/fp8_e4m3_decoder.sv \
+                   $(RTL)/3_p3llm_acc16/fp8_s0e4m4_decoder.sv \
+                   $(RTL)/3_p3llm_acc16/bitmod4_decoder.sv \
+                   $(RTL)/3_p3llm_acc16/int4_asym_decoder.sv \
+                   $(RTL)/3_p3llm_acc16/fixed_mul_shift.sv \
+                   $(RTL)/3_p3llm_acc16/compressor_4to2.sv \
+                   $(RTL)/3_p3llm_acc16/p3llm_pe.sv \
+                   $(RTL)/3_p3llm_acc16/p3llm_pcu_acc16.sv
+
+ifeq ($(TEST),p3llm_pcu_acc16)
+COCOTB_TOPLEVEL := p3llm_pcu_acc16
+MODULE          := test_p3llm_pcu
+TESTCASE        := test_pcu_regression
+VERILOG_SOURCES := $(P3LLM_ACC16_RTL)
+EXTRA_ARGS      += --assert -DP3LLM_ASSERTIONS
+P3LLM_ACC_W     := 16
+P3LLM_ACC_RSH   := 16
+export P3LLM_ACC_W P3LLM_ACC_RSH
 endif
 
 P3LLM_DEQUANT_DIR := $(RTL)/3_p3llm_dequant_rne
@@ -242,24 +285,59 @@ MODULE          := test_rabit_acc
 VERILOG_SOURCES := $(RTL)/4_rabit/rabit_acc_regfile.sv
 endif
 
-ifneq ($(filter $(TEST),rabit_pcu rabit_pcu_m10 rabit_pcu_noshift rabit_pcu_m10_noshift),)
+RABIT_PCU_TESTS := rabit_pcu rabit_pcu_m10 rabit_pcu_noshift \
+                   rabit_pcu_m10_noshift
+
+ifneq ($(filter $(TEST),$(RABIT_PCU_TESTS)),)
 MODULE            := test_rabit_pcu
 COCOTB_TOPLEVEL   := $(TEST)
 RABIT_MANT_W      := $(if $(findstring m10,$(TEST)),10,12)
 RABIT_SHIFTER_EN  := $(if $(findstring noshift,$(TEST)),0,1)
+RABIT_ACC_W       := 32
+RABIT_SHIFT_RND   := 0
 VERILOG_SOURCES   := $(RABIT_RTL) $(RTL)/4_rabit/rabit_pcu_synth.sv
 EXTRA_ARGS        += --assert -DRABIT_ASSERTIONS
-export RABIT_MANT_W RABIT_SHIFTER_EN
+export RABIT_MANT_W RABIT_SHIFTER_EN RABIT_ACC_W RABIT_SHIFT_RND
+endif
+
+# The acc16 design point lives in its own directory, which is a full copy of
+# rtl/4_rabit: the two must never be compiled together, because both define
+# every rabit_* module. Only the synthesis wrapper differs -- ACC_W 16,
+# MANT_W 10, SHIFT_RND 1 -- so the same testbench and golden model cover it
+# once they take those three as parameters.
+
+RABIT_ACC16_RTL := $(RTL)/4_rabit_acc16/rabit_compressor_4to2.sv \
+                   $(RTL)/4_rabit_acc16/rabit_cvt_fp16_blk.sv \
+                   $(RTL)/4_rabit_acc16/rabit_align_shift.sv \
+                   $(RTL)/4_rabit_acc16/rabit_pe.sv \
+                   $(RTL)/4_rabit_acc16/rabit_acc_regfile.sv \
+                   $(RTL)/4_rabit_acc16/rabit_pcu_ctrl.sv \
+                   $(RTL)/4_rabit_acc16/rabit_pcu_top.sv \
+                   $(RTL)/4_rabit_acc16/rabit_pcu_synth.sv
+
+ifeq ($(TEST),rabit_pcu_acc16)
+MODULE            := test_rabit_pcu
+COCOTB_TOPLEVEL   := rabit_pcu_acc16
+RABIT_MANT_W      := 10
+RABIT_SHIFTER_EN  := 1
+RABIT_ACC_W       := 16
+RABIT_SHIFT_RND   := 1
+VERILOG_SOURCES   := $(RABIT_ACC16_RTL)
+EXTRA_ARGS        += --assert -DRABIT_ASSERTIONS
+export RABIT_MANT_W RABIT_SHIFTER_EN RABIT_ACC_W RABIT_SHIFT_RND
 endif
 
 # --- RaBiT full-scale PCU -------------------------------------------------
 #
-# rtl/4_rabit holds the base variant and rtl/4_rabit_fullscale the full-scale
-# one. The full-scale top reuses the base modules rather than copying them, so
-# both directories are compiled together and sv2v/Verilator see one definition
-# of each shared module. rabit_fs_h16 is the same design with H_FMT = FP16_3WR,
-# which changes the write schedule -- the testbench's stimulus generator picks
-# it up from RABIT_FS_H_FMT.
+# rtl/4_rabit holds the base variant and rtl/4_rabit_dequant_rne the full-scale
+# one, which is RaBiT's axis-3 design point. The full-scale top reuses the base
+# modules rather than copying them, so both directories are compiled together
+# and sv2v/Verilator see one definition of each shared module. The test names
+# (rabit_fs*) and the top names (rabit_pcu_fs*) keep the historical `fs`
+# spelling: verif/models/rabit_fs_model.py, synth/build_rabit_fs_report.py and
+# the results/ artefact names all key off them. rabit_fs_h16 is the same design
+# with H_FMT = FP16_3WR, which changes the write schedule -- the testbench's
+# stimulus generator picks it up from RABIT_FS_H_FMT.
 
 RABIT_BASE_RTL := $(RTL)/4_rabit/rabit_compressor_4to2.sv \
                   $(RTL)/4_rabit/rabit_align_shift.sv \
@@ -269,15 +347,15 @@ RABIT_BASE_RTL := $(RTL)/4_rabit/rabit_compressor_4to2.sv \
                   $(RTL)/4_rabit/rabit_pcu_ctrl.sv
 
 RABIT_FS_RTL := $(RABIT_BASE_RTL) \
-                $(RTL)/4_rabit_fullscale/rabit_fs_fp16_pack.sv \
-                $(RTL)/4_rabit_fullscale/rabit_fs_h_scale_unit.sv \
-                $(RTL)/4_rabit_fullscale/rabit_fs_g_buffer.sv \
-                $(RTL)/4_rabit_fullscale/rabit_fs_dq_lane.sv \
-                $(RTL)/4_rabit_fullscale/rabit_fs_dq_add.sv \
-                $(RTL)/4_rabit_fullscale/rabit_fs_dq_unit.sv \
-                $(RTL)/4_rabit_fullscale/rabit_fs_drain_seq.sv \
-                $(RTL)/4_rabit_fullscale/rabit_pcu_fs_top.sv \
-                $(RTL)/4_rabit_fullscale/rabit_pcu_fs_synth.sv
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_fp16_pack.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_h_scale_unit.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_g_buffer.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_dq_lane.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_dq_add.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_dq_unit.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_drain_seq.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_pcu_fs_top.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_pcu_fs_synth.sv
 
 ifeq ($(TEST),rabit_fs)
 COCOTB_TOPLEVEL := rabit_pcu_fs

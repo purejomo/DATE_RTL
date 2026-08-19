@@ -59,30 +59,32 @@ DFF_AREA = {
 # P3-LLM PE shares one accumulator across its four multipliers, so the 8-PE and 16-PE
 # configurations have 8 and 16 accumulator lanes respectively.
 #
-# The last field is whether the measured boundary contains the accumulator. It
-# is now true for every row; the SIMD baseline carries a binary32 accumulator
-# per lane and the PCU rows a signed 32-bit fixed-point accumulator per
-# processing element. Before the baseline gained one the column read
-# "no (in GRF)" and the two halves of the table were not comparable.
+# The last field is the accumulator width in bits. The measured boundary
+# contains the accumulator on every row -- the SIMD baseline carries a binary32
+# accumulator per lane and the PCU rows a fixed-point accumulator per processing
+# element -- but the width is no longer the same everywhere, which is the whole
+# point of the acc16 axis. It is printed because ``adders`` counts accumulator
+# *lanes* and does not move when the width does, so without this column an
+# acc16 row and its base row are indistinguishable in the table.
 ROWS = [
     ("hbm-pim", "FP16",      "SIMD bank",  16,
-     "compute_hbmpim_250",       16, 16, 16, 250, True),
+     "compute_hbmpim_250",       16, 16, 16, 250, 32),
 
     # AWQ INT4 weights in the P3-LLM organization, at both PE counts. The
     # 32-multiplier row is the half-width diagnostic; the 64-multiplier row is
     # operator-count matched to the p3llm and spinquant rows below it, so those
     # three differ only in precision.
     ("awq",     "INT4/BF16", "P3-LLM PCU",  32,
-     "int4bf16_pcu32_500",       32,  8, 32, 500, True),
+     "int4bf16_pcu32_500",       32,  8, 32, 500, 32),
     ("awq",     "INT4/BF16", "P3-LLM PCU",  64,
-     "int4bf16_pcu_top_pcu500",  64, 16, 64, 500, True),
+     "int4bf16_pcu_top_pcu500",  64, 16, 64, 500, 32),
     ("p3llm",   "FP4/FP8",   "P3-LLM PCU",  64,
-     "p3llm_pcu_500",            64, 16, 64, 500, True),
+     "p3llm_pcu_500",            64, 16, 64, 500, 32),
     # Same 64-MAC raw PCU plus one time-multiplexed dequant pipeline.  The
     # shared scale multipliers are metadata/post-processing hardware and do not
     # increase the accepted low-precision GEMV MAC count.
     ("p3llm",   "FP4/FP8->FP8", "P3-LLM PCU+DQ", 64,
-     "p3llm_pcu_dequant_500",    64, 16, 64, 500, True),
+     "p3llm_pcu_dequant_500",    64, 16, 64, 500, 32),
 
     # RaBiT is the one row where the multiplier count and MAC/cycle diverge, so
     # read the two columns separately:
@@ -109,7 +111,7 @@ ROWS = [
     # on the convert path, so it is a sweep point in results/designs/rabit.md
     # rather than a table row.
     ("rabit",   "2-bit RB/FP16", "RaBiT PCU",  128,
-     "rabit_pcu_250",             0,  8, 128, 250, True),
+     "rabit_pcu_250",             0,  8, 128, 250, 32),
 
     # SpinQuant W4A4. The organization column reads "P3-LLM PCU" because that is
     # what it is: 16 PEs of four multipliers with one accumulator lane per PE,
@@ -131,7 +133,7 @@ ROWS = [
     # targets) plus the 256-bit bank read latch that makes the 2-pump schedule
     # work. results/designs/spinquant_area_report.md prices both.
     ("spinquant", "INT4/INT4", "P3-LLM PCU", 64,
-     "spinquant_pcu_500",        64, 16, 64, 500, True),
+     "spinquant_pcu_500",        64, 16, 64, 500, 32),
 
     # ---- axis 2: narrowed accumulator ---------------------------------
     #
@@ -147,13 +149,13 @@ ROWS = [
     # 16-bit accumulator cannot carry a 12-bit mantissa. The precision column
     # says so.
     ("awq",     "INT4/BF16", "P3-LLM PCU",  32,
-     "int4bf16_pcu32_acc16_500",   32,  8, 32, 500, True),
+     "int4bf16_pcu32_acc16_500",   32,  8, 32, 500, 16),
     ("awq",     "INT4/BF16", "P3-LLM PCU",  64,
-     "int4bf16_pcu_top_acc16_500", 64, 16, 64, 500, True),
+     "int4bf16_pcu_top_acc16_500", 64, 16, 64, 500, 16),
     ("p3llm",   "FP4/FP8",   "P3-LLM PCU",  64,
-     "p3llm_pcu_acc16_500",        64, 16, 64, 500, True),
+     "p3llm_pcu_acc16_500",        64, 16, 64, 500, 16),
     ("rabit",   "2-bit RB/FP16 m10", "RaBiT PCU", 128,
-     "rabit_pcu_acc16_250",         0,  8, 128, 250, True),
+     "rabit_pcu_acc16_250",         0,  8, 128, 250, 16),
 
     # ---- axis 3: dequantization inside the PU -------------------------
     #
@@ -165,9 +167,9 @@ ROWS = [
     # low-precision GEMV MAC count, so ``muls`` and ``mac_cyc`` stay at the base
     # row's values and um2/MAC stays comparable.
     ("awq",     "INT4/BF16->BF16", "P3-LLM PCU+DQ",  32,
-     "int4bf16_pcu32_dq_500",      32,  8, 32, 500, True),
+     "int4bf16_pcu32_dq_500",      32,  8, 32, 500, 32),
     ("awq",     "INT4/BF16->BF16", "P3-LLM PCU+DQ",  64,
-     "int4bf16_pcu_top_dq_500",    64, 16, 64, 500, True),
+     "int4bf16_pcu_top_dq_500",    64, 16, 64, 500, 32),
 ]
 
 
@@ -205,7 +207,8 @@ def main() -> None:
             measured[row["label"]] = row
 
     rows = []
-    for paper, precision, org, ops, label, muls, adders, mac_cyc, mhz, has_acc in ROWS:
+    for paper, precision, org, ops, label, muls, adders, mac_cyc, mhz, acc_w \
+            in ROWS:
         entry = measured.get(label)
         if entry is None:
             print(f"  (missing: {label})")
@@ -231,7 +234,7 @@ def main() -> None:
             "um2_per_gmacs": f"{area / gmacs:.0f}",
             "power_w": f"{power:.4f}" if power else "",
             "pj_per_mac": f"{power / gmacs * 1000:.2f}" if power else "",
-            "includes_accumulator": "yes" if has_acc else "no (in GRF)",
+            "accumulator_bits": acc_w,
             "cells": entry["cells"],
             "dffs": entry["dffs"],
         })
@@ -245,18 +248,19 @@ def main() -> None:
         writer.writerows(rows)
     print(f"wrote {path}\n")
 
-    hdr = (f"{'paper':<9}{'precision':<12}{'organization':<13}{'MHz':>5}"
+    hdr = (f"{'paper':<10}{'precision':<18}{'organization':<15}{'MHz':>5}"
            f"{'mul':>5}{'add':>5}{'MAC/cy':>7}{'GMAC/s':>8}{'COMPUTE':>10}{'comb':>10}"
-           f"{'seq':>9}{'um2/MAC':>9}{'um2/GMACs':>11}"
+           f"{'seq':>9}{'accW':>6}{'um2/MAC':>9}{'um2/GMACs':>11}"
            f"{'W':>9}{'pJ/MAC':>9}")
     print(hdr); print("-" * len(hdr))
     for r in rows:
-        print(f"{r['paper']:<9}{r['precision']:<12}{r['organization']:<13}"
+        print(f"{r['paper']:<10}{r['precision']:<18}{r['organization']:<15}"
               f"{r['freq_mhz']:>5}"
               f"{r['total_mul']:>5}{r['total_add']:>5}{r['mac_per_cycle']:>7}"
               f"{r['gmac_per_s']:>8}"
               f"{r['compute_area_um2']:>10}{r['combinational_um2']:>10}"
-              f"{r['sequential_um2']:>9}{r['um2_per_mac']:>9}"
+              f"{r['sequential_um2']:>9}{r['accumulator_bits']:>6}"
+              f"{r['um2_per_mac']:>9}"
               f"{r['um2_per_gmacs']:>11}"
               f"{r['power_w']:>9}{r['pj_per_mac']:>9}")
     print()
