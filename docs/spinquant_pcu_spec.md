@@ -60,6 +60,13 @@ acc[e][i] += Σ_{j<4} W_q[i][j] · A_q[j]
 **금지 목록.** 아래 중 하나라도 RTL 에 있으면 이 설계의 주장이 무너진다. 현재
 `rtl/5_spinquant/` 전체를 통틀어 하나도 없다.
 
+> **이 금지 목록은 base 행(`rtl/5_spinquant/`)에만 적용된다.** 축③
+> (`rtl/5_spinquant_dequant_rne/`) 과 축④ (`rtl/5_spinquant_dequant_requant/`) 는
+> dequantization 을 PCU 안으로 옮기는 것이 목적이므로 부동소수점 연산기와 스케일
+> 곱셈기를 의도적으로 포함한다. 두 디렉토리는 base 를 **인스턴스** 할 뿐 수정하지
+> 않으므로 위 주장은 그대로 유효하다. 축② (`rtl/5_spinquant_acc16/`) 는 금지 목록을
+> 지키며 누산기 폭만 바꾼다.
+
 - 부동소수점 연산기, exponent alignment shifter
 - format decoder (FP8/FP4/BitMoD 류)
 - zero-point 감산기

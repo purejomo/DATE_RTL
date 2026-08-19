@@ -1,0 +1,78 @@
+
+19. Printing statistics.
+
+=== spinquant_pcu_acc16 ===
+
+   Number of wires:              21550
+   Number of wire bits:          22077
+   Number of public wires:        1457
+   Number of public wire bits:    1984
+   Number of ports:                 13
+   Number of port bits:            540
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              20347
+     AND2_X1                       122
+     AND2_X2                        14
+     AND2_X4                         1
+     AND3_X1                        29
+     AND4_X1                         1
+     AOI21_X1                      782
+     AOI21_X2                       91
+     AOI21_X4                       10
+     AOI22_X1                       21
+     AOI22_X2                        2
+     BUF_X1                        604
+     BUF_X16                        22
+     BUF_X2                        101
+     BUF_X32                         3
+     BUF_X4                        131
+     BUF_X8                         39
+     CLKBUF_X1                     144
+     CLKBUF_X2                       7
+     CLKBUF_X3                       1
+     DFF_X1                       1448
+     INV_X1                       2295
+     INV_X16                         1
+     INV_X2                        173
+     INV_X4                         20
+     INV_X8                          2
+     MUX2_X1                        10
+     NAND2_X1                     5190
+     NAND2_X2                      702
+     NAND2_X4                      127
+     NAND3_X1                     1107
+     NAND3_X2                      207
+     NAND3_X4                       18
+     NAND4_X1                       52
+     NAND4_X2                        6
+     NAND4_X4                        2
+     NOR2_X1                      1575
+     NOR2_X2                       159
+     NOR2_X4                        53
+     NOR3_X1                        31
+     NOR3_X2                         3
+     NOR4_X1                         3
+     OAI211_X2                       5
+     OAI21_X1                     2855
+     OAI21_X2                      103
+     OAI21_X4                       24
+     OAI221_X1                      27
+     OAI22_X1                      466
+     OAI22_X2                       11
+     OAI22_X4                        3
+     OR2_X1                        296
+     OR2_X2                         91
+     OR2_X4                         25
+     OR3_X1                          7
+     OR3_X2                          3
+     OR3_X4                          2
+     XNOR2_X1                      824
+     XNOR2_X2                      171
+     XOR2_X1                        99
+     XOR2_X2                        26
+
+   Chip area for module '\spinquant_pcu_acc16': 25767.420000
+     of which used for sequential elements: 6547.856000 (25.41%)
+

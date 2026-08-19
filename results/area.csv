@@ -44,3 +44,6 @@ p3llm_pcu_acc16_500,p3llm_pcu_acc16,62151.964000,55517,2338,2.0
 rabit_pcu_acc16_250,rabit_pcu_acc16,32208.876000,27348,1168,4.0
 int4bf16_pcu32_dq_500,int4bf16_pcu32_dq,61701.892000,50346,3597,2.0
 int4bf16_pcu_top_dq_500,int4bf16_pcu_top_dq,105060.690000,85639,6336,2.0
+spinquant_pcu_acc16_500,spinquant_pcu_acc16,25767.420000,20347,1448,2.0
+spinquant_pcu_dq_500,spinquant_pcu_dq,40270.804000,31707,2121,2.0
+spinquant_pcu_rq_500,spinquant_pcu_rq,39996.824000,32769,2260,2.0

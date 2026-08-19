@@ -26,7 +26,9 @@ TESTS := fp16_mul \
          awq_dequant_arith pcu_bf16_32_dq pcu_bf16_64_dq \
          spinquant_pe spinquant_acc \
          spinquant_pcu spinquant_pcu_nolatch spinquant_pcu_acc32 \
-         spinquant_pcu_r2e2 spinquant_pcu_r2 spinquant_pcu_r4 spinquant_pcu_w512
+         spinquant_pcu_r2e2 spinquant_pcu_r2 spinquant_pcu_r4 spinquant_pcu_w512 \
+         spinquant_pcu_acc16 spinquant_rq_cvt \
+         spinquant_pcu_dq spinquant_pcu_rq
 
 .PHONY: all list distclean
 # cocotb's simulator wrapper exits 0 even when a testcase fails -- it reports the
@@ -464,6 +466,77 @@ endif
 SPINQUANT_PCU_TESTS := spinquant_pcu spinquant_pcu_nolatch spinquant_pcu_acc32 \
                        spinquant_pcu_r2 spinquant_pcu_r2e2 spinquant_pcu_r4 \
                        spinquant_pcu_w512
+
+# The acc16 variant lives in rtl/5_spinquant_acc16 and defines the same module
+# names as the base directory, so the two source lists must never be
+# concatenated. It reuses test_spinquant_pcu unchanged: the testbench already
+# takes its geometry from the environment, and SPINQUANT_ACC_W /
+# SPINQUANT_ACC_RSH are the two knobs the golden model needs to narrow with it.
+ifeq ($(TEST),spinquant_pcu_acc16)
+MODULE                := test_spinquant_pcu
+COCOTB_TOPLEVEL       := spinquant_pcu_acc16
+SPINQUANT_W_LATCH     := 1
+SPINQUANT_ACC_W       := 16
+SPINQUANT_ACC_CHAIN_W := 16
+SPINQUANT_ACC_RSH     := 7
+SPINQUANT_NPE         := 16
+SPINQUANT_NROW        := 1
+SPINQUANT_NENTRY      := 4
+VERILOG_SOURCES := $(RTL)/5_spinquant_acc16/spinquant_compressor_4to2.sv \
+                   $(RTL)/5_spinquant_acc16/spinquant_mul_s4u4.sv \
+                   $(RTL)/5_spinquant_acc16/spinquant_pe.sv \
+                   $(RTL)/5_spinquant_acc16/spinquant_acc_regfile.sv \
+                   $(RTL)/5_spinquant_acc16/spinquant_pcu_top.sv \
+                   $(RTL)/5_spinquant_acc16/spinquant_pcu_acc16_synth.sv
+EXTRA_ARGS      += --assert -DSPINQUANT_ASSERTIONS
+export SPINQUANT_W_LATCH SPINQUANT_ACC_W SPINQUANT_ACC_CHAIN_W SPINQUANT_ACC_RSH
+export SPINQUANT_NPE SPINQUANT_NROW SPINQUANT_NENTRY
+endif
+
+# The requantizer's binary32 -> unsigned INT4 converter, on its own. It is pure
+# combinational logic, so the harness only needs a clock to sample it under.
+ifeq ($(TEST),spinquant_rq_cvt)
+COCOTB_TOPLEVEL := spinquant_rq_fp32_to_int4
+MODULE          := test_spinquant_rq_cvt
+VERILOG_SOURCES := $(RTL)/5_spinquant_dequant_requant/spinquant_rq_fp32_to_int4.sv
+endif
+
+# The two drain-path engines. Each directory carries its own copy of the raw
+# spinquant_* modules, so the two source lists are separate and neither may be
+# concatenated with rtl/5_spinquant.
+SPINQUANT_DQ_DIR := $(RTL)/5_spinquant_dequant_rne
+SPINQUANT_RQ_DIR := $(RTL)/5_spinquant_dequant_requant
+
+ifeq ($(TEST),spinquant_pcu_dq)
+COCOTB_TOPLEVEL := spinquant_pcu_dq
+MODULE          := test_spinquant_pcu_dq
+VERILOG_SOURCES := $(SPINQUANT_DQ_DIR)/spinquant_compressor_4to2.sv \
+                   $(SPINQUANT_DQ_DIR)/spinquant_mul_s4u4.sv \
+                   $(SPINQUANT_DQ_DIR)/spinquant_pe.sv \
+                   $(SPINQUANT_DQ_DIR)/spinquant_acc_regfile.sv \
+                   $(SPINQUANT_DQ_DIR)/spinquant_pcu_top.sv \
+                   $(SPINQUANT_DQ_DIR)/spinquant_dq_fixed32_float16_mul_pipe.sv \
+                   $(SPINQUANT_DQ_DIR)/spinquant_dq_fp32_pack_pipe.sv \
+                   $(SPINQUANT_DQ_DIR)/spinquant_pcu_dq_top.sv \
+                   $(SPINQUANT_DQ_DIR)/spinquant_pcu_dq_synth.sv
+endif
+
+ifeq ($(TEST),spinquant_pcu_rq)
+COCOTB_TOPLEVEL := spinquant_pcu_rq
+MODULE          := test_spinquant_pcu_rq
+VERILOG_SOURCES := $(SPINQUANT_RQ_DIR)/spinquant_compressor_4to2.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_mul_s4u4.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_pe.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_acc_regfile.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_pcu_top.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_dq_fixed32_float16_mul_pipe.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_dq_fp32_pack_pipe.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_rq_minmax.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_rq_fp32_to_int4.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_pcu_rq_top.sv \
+                   $(SPINQUANT_RQ_DIR)/spinquant_pcu_rq_synth.sv
+EXTRA_ARGS      += --assert
+endif
 
 ifneq ($(filter $(TEST),$(SPINQUANT_PCU_TESTS)),)
 MODULE                := test_spinquant_pcu

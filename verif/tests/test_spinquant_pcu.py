@@ -40,8 +40,10 @@ from spinquant_model import (
     W_MAX,
     W_MIN,
     SpinQuantPcu,
+    dot_w4a4,
     flatten_rows,
     gemv_w4a4,
+    rne_narrow,
     pack_acts,
     pack_beat,
     tile_to_beats,
@@ -54,6 +56,10 @@ CHAIN_W = int(os.environ.get("SPINQUANT_ACC_CHAIN_W", "24"))
 NPE = int(os.environ.get("SPINQUANT_NPE", "16"))
 NROW = int(os.environ.get("SPINQUANT_NROW", "1"))
 NENTRY = int(os.environ.get("SPINQUANT_NENTRY", "4"))
+# The acc16 variant narrows the architectural accumulator and rounds the partial
+# sum into it. ACC_RSH = 0 is the base design, where no narrow exists at all.
+ACC_W = int(os.environ.get("SPINQUANT_ACC_W", "32"))
+ACC_RSH = int(os.environ.get("SPINQUANT_ACC_RSH", "0"))
 
 BEAT_W = NPE * NWAY * 4
 NLANE = NROW * NPE
@@ -202,7 +208,7 @@ async def run_slots(dut, macs, model, rng, gaps=None, label=""):
         )
         if due is not None:
             sticky = due[2]
-            actual = unpack_drain(int(dut.drain_data_o.value), nlane=NLANE)
+            actual = unpack_drain(int(dut.drain_data_o.value), nlane=NLANE, acc_w=ACC_W)
             assert actual == due[1], (
                 f"{label}: accumulator mismatch at cycle {cycle}, "
                 f"entry {due[0]}\nactual  ={actual}\nexpected={due[1]}"
@@ -220,7 +226,7 @@ async def drain_all_entries(dut, model, label=""):
         dut.drain_entry_i.value = entry
         await RisingEdge(dut.clk)
         await ReadOnly()
-        actual = unpack_drain(int(dut.drain_data_o.value), nlane=NLANE)
+        actual = unpack_drain(int(dut.drain_data_o.value), nlane=NLANE, acc_w=ACC_W)
         expected = model.read(entry)
         assert actual == expected, (
             f"{label}: drain mismatch on entry {entry}\n"
@@ -229,7 +235,8 @@ async def drain_all_entries(dut, model, label=""):
 
 
 def new_model():
-    return SpinQuantPcu(npe=NPE, nrow=NROW, nentry=NENTRY, chain_w=CHAIN_W)
+    return SpinQuantPcu(npe=NPE, nrow=NROW, nentry=NENTRY, acc_w=ACC_W,
+                        chain_w=CHAIN_W, acc_rsh=ACC_RSH)
 
 
 def random_tile(rng, k, nrow=NROW):
@@ -239,11 +246,49 @@ def random_tile(rng, k, nrow=NROW):
 
 
 def expected_lanes(weights, act_rows):
-    """The reference the whole design is measured against, lane by lane."""
+    """The reference the whole design is measured against, lane by lane.
 
-    lanes = []
+    With ACC_RSH = 0 the accumulator is exact, so the reference is the exact
+    GEMV and nothing more needs saying.
+
+    With ACC_RSH != 0 it is not, by design: the acc16 variant rounds every
+    partial sum into a narrower register, so summing K products first and
+    rounding once is a different number from what the hardware holds. The
+    reference is therefore rebuilt beat by beat. That alone would be a weak
+    check -- it re-derives the model's own arithmetic -- so it is paired with a
+    bound that does not depend on the rounding at all: each beat can lose at
+    most half an accumulator LSB, so the whole tile must land within
+    ``beats * 2**(ACC_RSH-1)`` of the exact GEMV. That is the claim
+    rtl/5_spinquant_acc16/README.md makes, checked on every tile the suite
+    runs.
+    """
+
+    if ACC_RSH == 0:
+        lanes = []
+        for row in act_rows:
+            lanes.extend(gemv_w4a4(weights, row))
+        return tuple(lanes)
+
+    lanes = [0] * NLANE
+    beats = 0
+    for beat_w, beat_a in tile_to_beats(weights, act_rows, npe=NPE):
+        beats += 1
+        for row in range(NROW):
+            for pe in range(NPE):
+                psum = dot_w4a4(beat_w[pe], beat_a[row])
+                lanes[row * NPE + pe] += rne_narrow(psum, ACC_RSH)
+
+    exact = []
     for row in act_rows:
-        lanes.extend(gemv_w4a4(weights, row))
+        exact.extend(gemv_w4a4(weights, row))
+    bound = beats * (1 << (ACC_RSH - 1))
+    for lane, (narrowed, truth) in enumerate(zip(lanes, exact)):
+        error = abs((narrowed << ACC_RSH) - truth)
+        assert error <= bound, (
+            f"lane {lane}: acc16 error {error} exceeds the half-LSB-per-beat "
+            f"bound {bound} over {beats} beats"
+        )
+
     return tuple(lanes)
 
 
@@ -411,11 +456,18 @@ async def test_drain_and_clear_boundaries(dut):
 
 @cocotb.test()
 async def test_worst_case_accumulation(dut):
-    """Scenario 6: the corner the 24-bit carry chain was sized for.
+    """Scenario 6: the corner the carry chain was sized for.
 
     Every weight -8 and every activation 15 over K = 14336 gives -1720320,
     which needs 22 bits. The mirror case, +7 and 15, gives 1505280. Neither may
     raise the overflow flag.
+
+    This is also the corner that decides ACC_RSH for the acc16 variant. There
+    every beat contributes rne_narrow(-480, 7) = -4, so the tile lands on
+    -14336 -- inside a 16-bit signed accumulator with room to spare, which is
+    exactly what shifting the accumulator up by seven bits was for. Keeping the
+    base design's LSB weight instead would have wrapped here at 1/50th of this
+    K, so this assertion is the one that would catch that mistake.
     """
 
     cocotb.start_soon(Clock(dut.clk, 2, units="ns").start())
@@ -423,14 +475,20 @@ async def test_worst_case_accumulation(dut):
     rng = random.Random(0x0006)
 
     k = 14336
-    for weight, entry, expected in ((W_MIN, 0, W_MIN * A_MAX * k),
-                                    (W_MAX, 1, W_MAX * A_MAX * k)):
+    beats = k // NWAY
+
+    def corner_total(weight):
+        """What the accumulator holds after ``beats`` identical beats."""
+        return beats * rne_narrow(weight * A_MAX * NWAY, ACC_RSH)
+
+    for weight, entry, expected in ((W_MIN, 0, corner_total(W_MIN)),
+                                    (W_MAX, 1, corner_total(W_MAX))):
         model = new_model()
         beat_w = [[weight] * NWAY for _ in range(NPE)]
         beat_a = [[A_MAX] * NWAY for _ in range(NROW)]
         head = MacOp(beat_w, beat_a, entry, True)
         body = MacOp(beat_w, beat_a, entry, False)
-        macs = [head] + [body] * (k // NWAY - 1)
+        macs = [head] + [body] * (beats - 1)
 
         await run_slots(dut, macs, model, rng, label=f"corner w={weight}")
         assert model.read(entry) == tuple([expected] * NLANE), (

@@ -156,6 +156,14 @@ ROWS = [
      "p3llm_pcu_acc16_500",        64, 16, 64, 500, 16),
     ("rabit",   "2-bit RB/FP16 m10", "RaBiT PCU", 128,
      "rabit_pcu_acc16_250",         0,  8, 128, 250, 16),
+    # SpinQuant narrows differently from the three rows above it. Their
+    # accumulators hold block-floating-point values whose low bits are already
+    # approximate, so an RNE narrow costs precision and nothing else. This one
+    # holds an exact integer dot product whose live value needs 22 bits at
+    # K = 14336, so keeping the same LSB weight in 16 bits would cap the design
+    # at K = 273. It keeps the MSBs instead: ACC_RSH = 7.
+    ("spinquant", "INT4/INT4", "P3-LLM PCU", 64,
+     "spinquant_pcu_acc16_500",    64, 16, 64, 500, 16),
 
     # ---- axis 3: dequantization inside the PU -------------------------
     #
@@ -170,6 +178,24 @@ ROWS = [
      "int4bf16_pcu32_dq_500",      32,  8, 32, 500, 32),
     ("awq",     "INT4/BF16->BF16", "P3-LLM PCU+DQ",  64,
      "int4bf16_pcu_top_dq_500",    64, 16, 64, 500, 32),
+    # SpinQuant's axis-3 row does NOT close the loop. Every other row in this
+    # block ends in the format its own next layer accepts and removes the host
+    # kernel; W4A4 means a binary16 output still has to be quantized before the
+    # next layer reads it. This row exists as the ablation midpoint for the
+    # axis-4 row below, and its engine is cheaper than the AWQ ones because the
+    # activation zero point folds into the integer domain -- no binary32
+    # accumulator adder, only a multiply and a pack.
+    ("spinquant", "INT4/INT4->FP16", "P3-LLM PCU+DQ", 64,
+     "spinquant_pcu_dq_500",       64, 16, 64, 500, 32),
+
+    # ---- axis 4: dequantization AND requantization --------------------
+    #
+    # SpinQuant only, because it is the only design here whose activations are
+    # quantized. The output is the unsigned INT4 the next layer reads, so this
+    # is the one row in the table where no host kernel touches the output at
+    # all: 4 bit/element against the base row's 32.
+    ("spinquant", "INT4/INT4->INT4", "P3-LLM PCU+RQ", 64,
+     "spinquant_pcu_rq_500",       64, 16, 64, 500, 32),
 ]
 
 

@@ -229,6 +229,54 @@ SPINQUANT_SOURCES=(
     "${RTL}/5_spinquant/spinquant_pcu_synth.sv"
 )
 
+# SpinQuant axis 2: the accumulator narrowed to 16 bits, MSBs kept. The
+# multipliers, the compressor and the sequencing are bit-identical to the base
+# row; only spinquant_pe's accumulate stage and the register file width change.
+SPINQUANT_ACC16_SOURCES=(
+    "${RTL}/5_spinquant_acc16/spinquant_compressor_4to2.sv"
+    "${RTL}/5_spinquant_acc16/spinquant_mul_s4u4.sv"
+    "${RTL}/5_spinquant_acc16/spinquant_pe.sv"
+    "${RTL}/5_spinquant_acc16/spinquant_acc_regfile.sv"
+    "${RTL}/5_spinquant_acc16/spinquant_pcu_top.sv"
+    "${RTL}/5_spinquant_acc16/spinquant_pcu_acc16_synth.sv"
+)
+
+# SpinQuant axis 3: the raw engine plus one shared dequantization pipe. Note
+# this row does NOT remove the host kernel -- SpinQuant is W4A4, so a binary16
+# output still has to be quantized before the next layer reads it. It is the
+# ablation midpoint for the row below.
+SPINQUANT_DQ_SOURCES=(
+    "${RTL}/5_spinquant_dequant_rne/spinquant_compressor_4to2.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_mul_s4u4.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_pe.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_acc_regfile.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_pcu_top.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_dq_fixed32_float16_mul_pipe.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_dq_fp32_pack_pipe.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_pcu_dq_top.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_pcu_dq_synth.sv"
+)
+
+# SpinQuant axis 4: the same plus the requantizer, so the output is the INT4 the
+# next layer reads and no host kernel runs at all. KEEP_FP16_OUT = 1 makes this
+# a strict superset of the row above, so the two differ by the requantizer and
+# nothing else. Their area totals are not decomposable, though: this row uses
+# 1062 more cells and 139 more flops and still lands 274 um2 lower, because ABC
+# maps the bigger netlist with cheaper cells. Quote the cell/flop deltas.
+SPINQUANT_RQ_SOURCES=(
+    "${RTL}/5_spinquant_dequant_requant/spinquant_compressor_4to2.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_mul_s4u4.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_pe.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_acc_regfile.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_pcu_top.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_dq_fixed32_float16_mul_pipe.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_dq_fp32_pack_pipe.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_rq_minmax.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_rq_fp32_to_int4.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_pcu_rq_top.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_pcu_rq_synth.sv"
+)
+
 # label : top : clock period (ns) : source set
 ROWS=(
     "compute_hbmpim_250      : hbmpim_fp16_pcu_16_lane       : 4.0 : hbmpim_simd"
@@ -258,6 +306,10 @@ ROWS=(
     # RaBiT is measured at 250 MHz for the same reason the base row is: the
     # 500 MHz build of the base variant misses setup on the convert path.
     "rabit_pcu_acc16_250        : rabit_pcu_acc16        : 4.0 : rabit_acc16"
+    # SpinQuant keeps the MSBs rather than the LSBs: its accumulator holds an
+    # exact integer dot product whose live value needs 22 bits at K = 14336, so
+    # keeping the same LSB weight in 16 bits would cap the design at K = 273.
+    "spinquant_pcu_acc16_500    : spinquant_pcu_acc16    : 2.0 : spinquant_acc16"
 
     # ---- axis 3: dequantization inside the PU ------------------------
     #
@@ -265,6 +317,18 @@ ROWS=(
     # run_rabit_fs.sh with the rest of the full-scale sweep.
     "int4bf16_pcu32_dq_500      : int4bf16_pcu32_dq      : 2.0 : pcu8_dq"
     "int4bf16_pcu_top_dq_500    : int4bf16_pcu_top_dq    : 2.0 : pcu16_dq"
+    # SpinQuant's axis-3 row is an ablation, not a loop-closing row: W4A4 means
+    # a binary16 output still needs a host quantization kernel. Read it only
+    # against the axis-4 row below it.
+    "spinquant_pcu_dq_500       : spinquant_pcu_dq       : 2.0 : spinquant_dq"
+
+    # ---- axis 4: dequantization AND requantization -------------------
+    #
+    # SpinQuant only. It is the one design here whose activations are
+    # quantized, so it is the one design where finishing the postprocess in the
+    # PU means a requantizer. Output is 4 bit/element against the base row's
+    # 32, and no host kernel runs.
+    "spinquant_pcu_rq_500       : spinquant_pcu_rq       : 2.0 : spinquant_rq"
 )
 
 field() { echo "$1" | cut -d: -f"$2" | tr -d ' '; }
@@ -284,6 +348,9 @@ sources_for() {
         rabit)       printf '%s\n' "${RABIT_BASE_SOURCES[@]}" ;;
         rabit_acc16) printf '%s\n' "${RABIT_ACC16_SOURCES[@]}" ;;
         spinquant)   printf '%s\n' "${SPINQUANT_SOURCES[@]}" ;;
+        spinquant_acc16) printf '%s\n' "${SPINQUANT_ACC16_SOURCES[@]}" ;;
+        spinquant_dq)    printf '%s\n' "${SPINQUANT_DQ_SOURCES[@]}" ;;
+        spinquant_rq)    printf '%s\n' "${SPINQUANT_RQ_SOURCES[@]}" ;;
     esac
 }
 

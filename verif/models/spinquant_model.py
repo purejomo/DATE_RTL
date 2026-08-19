@@ -55,6 +55,24 @@ PROD_MIN = W_MIN * A_MAX        # -120
 PROD_MAX = W_MAX * A_MAX        #  105
 
 
+def rne_narrow(value: int, shift: int) -> int:
+    """``value`` rounded to nearest, ties to even, down by ``shift`` bits.
+
+    This is the acc16 variant's narrow, and it mirrors spinquant_pe.sv exactly.
+    Python's ``>>`` on a negative int floors, which is what an arithmetic shift
+    right does, and masking the low bits of a negative int gives the same bits
+    two's complement does -- so no width bookkeeping is needed here.
+    """
+
+    if shift <= 0:
+        return value
+    quotient = value >> shift
+    round_bit = (value >> (shift - 1)) & 1
+    sticky = 1 if (value & ((1 << (shift - 1)) - 1)) else 0
+    round_up = round_bit & (sticky | (quotient & 1))
+    return quotient + round_up
+
+
 def wrap_signed(value: int, width: int) -> int:
     """Reduce ``value`` to ``width``-bit two's complement, as the RTL does."""
 
@@ -220,9 +238,11 @@ class SpinQuantPcu:
 
     def __init__(self, npe: int = NPE, nway: int = NWAY, nrow: int = 1,
                  nentry: int = NENTRY, acc_w: int = ACC_W,
-                 chain_w: int = ACC_CHAIN_W) -> None:
+                 chain_w: int = ACC_CHAIN_W, acc_rsh: int = 0) -> None:
         if chain_w > acc_w:
             raise ValueError("chain_w must not exceed acc_w")
+        if not 0 <= acc_rsh < PSUM_W:
+            raise ValueError(f"acc_rsh {acc_rsh} is outside 0..{PSUM_W - 1}")
         self.npe = npe
         self.nway = nway
         self.nrow = nrow
@@ -230,6 +250,10 @@ class SpinQuantPcu:
         self.nentry = nentry
         self.acc_w = acc_w
         self.chain_w = chain_w
+        # acc_rsh = 0 is the base design: the partial sum is added as is. Any
+        # other value is the acc16 variant, which keeps the accumulator's most
+        # significant bits and spends the low acc_rsh on rounding.
+        self.acc_rsh = acc_rsh
         self.acc = [[0] * self.nlane for _ in range(nentry)]
         self.ovf_sticky = False
 
@@ -276,6 +300,7 @@ class SpinQuantPcu:
                 if psum != wrap_signed(psum, PSUM_W):
                     raise OverflowError(
                         f"partial sum {psum} does not fit {PSUM_W} bits")
+                psum = rne_narrow(psum, self.acc_rsh)
                 lane = row * self.npe + pe
                 if clear:
                     updated.append(wrap_signed(psum, self.chain_w))
