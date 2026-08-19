@@ -2,9 +2,17 @@
 
 // INT4 weight x 16-bit float activation PCU in P3-LLM's organization.
 //
-// This is the sixteen-PE build. The eight-PE build is the identical source in
-// rtl/2_awq_p3llm_8pe; the two directories are kept apart so each synthesis
-// row has one unambiguous set of sources. Any fix here must be mirrored there.
+// This v2 sixteen-PE build accepts one independent four-bit zero point per PE.
+// AutoAWQ stores weight zero points per output channel and group; broadcasting
+// one zero point to all sixteen output PEs (the v1 DATE contract) therefore
+// does not implement the standard AutoAWQ metadata layout.  Only this metadata
+// fan-out changes: PE arithmetic, four registered stages, accumulator width,
+// initiation interval, and the software-selected block exponent are unchanged.
+//
+// The eight-PE build is the identical source in rtl/2_awq_p3llm_8pe_v2 with
+// NUM_PES defaulted to eight; the two directories are kept apart so each
+// synthesis row has one unambiguous set of sources. Any fix here must be
+// mirrored there.
 //
 // One accepted transaction computes a 1 x 4 x 16 GEMV tile: four activations
 // shared across sixteen processing elements, each PE holding four weights and
@@ -49,7 +57,7 @@ module int4float_pcu #(
     input  wire [63:0]  i_act,        // four 16-bit float activations
     input  wire signed [9:0] i_ref_exp,
     input  wire [NUM_PES*16-1:0] i_weight_q,  // four INT4 nibbles per PE
-    input  wire [3:0]   i_weight_zp,
+    input  wire [NUM_PES*4-1:0] i_weight_zp,  // one 4-bit ZP per output PE
 
     output wire         o_valid,
     output wire [NUM_PES*32-1:0] o_acc,       // one signed 32-bit accumulator per PE
@@ -105,7 +113,7 @@ module int4float_pcu #(
                 .i_act2       (aligned[2]),
                 .i_act3       (aligned[3]),
                 .i_weight_q   (i_weight_q[pe*16 +: 16]),
-                .i_weight_zp  (i_weight_zp),
+                .i_weight_zp  (i_weight_zp[pe*4 +: 4]),
                 .o_valid      (pe_valid[pe]),
                 .o_acc        (o_acc[pe*32 +: 32])
             );

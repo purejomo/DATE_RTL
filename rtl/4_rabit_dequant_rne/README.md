@@ -1,4 +1,22 @@
-# RaBiT PCU, full-scale variant (PCU-FS)
+# RaBiT PCU, full-scale variant (PCU-FS) — the RaBiT dequant_rne design point
+
+This directory is RaBiT's column ③ (`dequant_rne`) of the three-axis comparison:
+a 32-bit fixed-point accumulation followed by an in-PCU dequantization that ends
+in a binary16 RNE pack, so the drained value is already in the activation
+precision the next layer consumes. The file names (`rabit_fs_*`), the module
+names (`rabit_pcu_fs`) and the synthesis labels keep the historical `fs`
+spelling on purpose: `verif/models/rabit_fs_model.py`,
+`synth/build_rabit_fs_report.py` and the `results/` artefact names all key off
+them, and renaming would invalidate the area history.
+
+> **Footnote for the ③ column.** This design point is not a like-for-like member
+> of column ③. On top of the drain-path dequantization that every other ③ design
+> has, it also contains the *write*-path h scale unit — sixteen fp16 x fp8
+> multipliers plus one pack — which has no counterpart in the AWQ or P3-LLM ③
+> designs. The RaBiT row of the ③ area comparison is therefore over-counted by
+> the `rabit_fs_blk_hscale_*` contribution; `synth/run_rabit_fs.sh` already
+> synthesizes that block on its own, so the over-count can be subtracted
+> explicitly rather than estimated.
 
 The base variant in [`rtl/4_rabit`](../4_rabit) computes the binary part of a
 RaBiT projection layer and leaves both scales with the NPU:
