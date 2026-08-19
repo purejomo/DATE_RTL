@@ -21,6 +21,7 @@ TESTS := fp16_mul \
          rabit_pcu rabit_pcu_m10 rabit_pcu_noshift rabit_pcu_m10_noshift \
          rabit_fs rabit_fs_pipe rabit_fs_h16 \
          p3llm_dequant_arith p3llm_dequant \
+         awq_dequant_arith \
          spinquant_pe spinquant_acc \
          spinquant_pcu spinquant_pcu_nolatch spinquant_pcu_acc32 \
          spinquant_pcu_r2e2 spinquant_pcu_r2 spinquant_pcu_r4 spinquant_pcu_w512
@@ -159,6 +160,26 @@ P3LLM_DEQUANT_RTL := $(P3LLM_DEQUANT_DIR)/p3llm_pkg.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_add_pipe.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_dequant_fp32_fp16_mul_pack_pipe.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_pcu_dequant.sv
+
+# --- AWQ in-PCU dequantization ------------------------------------------
+#
+# The AWQ dequant_rne directories carry their own parameterized copies of the
+# three shared FP pipes: the multiplier takes the scale format as a parameter
+# and a wider signed binary exponent, and the packer has no second scale. The
+# harness instantiates both bfloat16 and binary16 variants, so one run covers
+# both activation formats.
+
+AWQ_DQ_DIR := $(RTL)/2_awq_p3llm_8pe_v2_dequant_rne
+
+ifeq ($(TEST),awq_dequant_arith)
+COCOTB_TOPLEVEL := awq_dequant_arith_tb
+MODULE          := test_awq_dequant_arith
+TESTCASE        := test_awq_dequant_arithmetic
+VERILOG_SOURCES := $(AWQ_DQ_DIR)/awq_dq_fixed32_float16_mul_pipe.sv \
+                   $(AWQ_DQ_DIR)/awq_dq_fp32_add_pipe.sv \
+                   $(AWQ_DQ_DIR)/awq_dq_fp32_pack_pipe.sv \
+                   $(VERIF)/tests/harness/awq_dequant_arith_tb.sv
+endif
 
 ifeq ($(TEST),p3llm_dequant_arith)
 COCOTB_TOPLEVEL := p3llm_dequant_arith_tb
