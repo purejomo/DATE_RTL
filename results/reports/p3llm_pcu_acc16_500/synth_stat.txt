@@ -1,0 +1,74 @@
+
+19. Printing statistics.
+
+=== p3llm_pcu_acc16 ===
+
+   Number of wires:              57611
+   Number of wire bits:          58262
+   Number of public wires:        2095
+   Number of public wire bits:    2746
+   Number of ports:                 14
+   Number of port bits:            665
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              55517
+     AND2_X1                       567
+     AND2_X2                        34
+     AND3_X1                       262
+     AND3_X2                         1
+     AOI21_X1                     3731
+     AOI21_X2                      246
+     AOI21_X4                       12
+     AOI22_X1                      112
+     BUF_X1                       1595
+     BUF_X16                        22
+     BUF_X2                        195
+     BUF_X32                         1
+     BUF_X4                        122
+     BUF_X8                        110
+     CLKBUF_X1                     311
+     CLKBUF_X2                       2
+     CLKBUF_X3                       2
+     DFF_X1                       2338
+     INV_X1                       8253
+     INV_X2                        140
+     INV_X4                         24
+     INV_X8                          3
+     MUX2_X1                       377
+     NAND2_X1                    14920
+     NAND2_X2                      953
+     NAND2_X4                       66
+     NAND3_X1                     2607
+     NAND3_X2                       69
+     NAND3_X4                       36
+     NAND4_X1                      311
+     NAND4_X2                       36
+     NAND4_X4                        4
+     NOR2_X1                      3699
+     NOR2_X2                       673
+     NOR2_X4                       170
+     NOR3_X1                       385
+     NOR3_X2                        18
+     NOR4_X1                        14
+     NOR4_X2                        14
+     NOR4_X4                         3
+     OAI21_X1                     6201
+     OAI21_X2                      123
+     OAI21_X4                        1
+     OAI221_X1                     100
+     OAI22_X1                      347
+     OAI22_X2                       22
+     OAI22_X4                        2
+     OR2_X1                       2291
+     OR2_X2                         90
+     OR3_X1                         58
+     OR3_X2                          8
+     XNOR2_X1                     3154
+     XNOR2_X2                      253
+     XOR2_X1                       396
+     XOR2_X2                        33
+
+   Chip area for module '\p3llm_pcu_acc16': 62151.964000
+     of which used for sequential elements: 10572.436000 (17.01%)
+

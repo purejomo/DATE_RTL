@@ -1,0 +1,4 @@
+
+18. Executing CHECK pass (checking for obvious problems).
+Checking module int4bf16_pcu_top_acc16...
+Found and reported 0 problems.

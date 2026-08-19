@@ -22,25 +22,29 @@ nibble 4 bit 에서 PE 당 4 bit (8 PE = 32 bit) 로 넓어졌다. 산술, 파�
 |---|---|---:|---:|---:|---:|---:|---:|
 | HBM-PIM FP16 SIMD 16 lane | `hbmpim_fp16_pcu_16_lane` | 4.0 ns | 60,176 | 1.000x | 56433 | 1578 | +2.01 |
 | **AWQ PCU v2, 8 PE x 4 way** | `int4bf16_pcu32` | 2.0 ns | 36,919 | 0.614x | 32282 | 1566 | +0.66 |
-| AWQ PCU v1, 16 PE x 4 way | `int4bf16_pcu_top` | 2.0 ns | 71,745 | 1.192x | 62010 | 3054 | +0.65 |
+| AWQ PCU v2, 16 PE x 4 way | `int4bf16_pcu_top` | 2.0 ns | 72,280 | 1.201x | 63288 | 3054 | +0.68 |
 
 **면적 제약 충족**: 36,919 um2 < 60,176 um2 — baseline 의 61.4 %, 23,257 um2 절감.
 
+두 판 모두 v2 계약이다 — `i_weight_zp` 이 PE 당 독립 4-bit 이며, 16 PE 판의
+포트는 4-bit 이 아니라 64-bit 이다. 아래 16 PE 면적은 v2 로 전환한 뒤의 값이라
+v1 시절 인용치와 직접 비교할 수 없다.
+
 8 PE 판은 곱셈기 32 개로 baseline SIMD 의 32-multiplier 구성과 곱셈기 수를 맞춘
-행이다. 16 PE 판과의 면적비가 1:1.94 로 정확히 2 배가 아닌 것은 공유 정렬기
+행이다. 16 PE 판과의 면적비가 1:1.96 로 정확히 2 배가 아닌 것은 공유 정렬기
 (`int4float_align` 4 개) 가 `NUM_PES` 를 따라 줄지 않기 때문이다 — MAC 당 정렬
 비용은 8 PE 쪽이 2 배다.
 
 | 설계 | 면적 (um2) | baseline 대비 | MAC/cycle | um2/MAC |
 |---|---:|---:|---:|---:|
 | AWQ PCU v2, 8 PE x 4 way | 36,919 | 0.614x | 32 | 1,154 |
-| AWQ PCU v1, 16 PE x 4 way | 71,745 | 1.192x | 64 | 1,121 |
+| AWQ PCU v2, 16 PE x 4 way | 72,280 | 1.201x | 64 | 1,129 |
 | P3-LLM PCU, FP4/FP8, 16 PE x 4 way | 71,287 | 1.185x | 64 | 1,114 |
 | SpinQuant W4A4 PCU, 16 PE x 4 way | 32,376 | 0.538x | 64 | 506 |
 | HBM-PIM FP16 SIMD 16 lane | 60,176 | 1.000x | 16 | 3,761 |
 
 조직은 **P3-LLM PCU 그대로**이고 피연산자 형식만 다르다. 16 PE 판이 P3-LLM 행과
-um2/MAC 1,121 對 1,114 로 사실상 같은 것이 그 증거다 — INT4×BF16 로 바꿔서 아낀
+um2/MAC 1,129 對 1,114 로 사실상 같은 것이 그 증거다 — INT4×BF16 로 바꿔서 아낀
 것과 block-float 정렬기로 새로 쓴 것이 거의 상쇄된다.
 
 ### 조합 / 순차 분해
@@ -108,7 +112,7 @@ path 는 zero-point 쪽이 아니라 block-float 정렬기 쪽이다** — ZP �
 | | Power | pJ/MAC | GMAC/s |
 |---|---:|---:|---:|
 | AWQ PCU v2, 8 PE x 4 way | 0.0177 W | 1.11 | 16.0 |
-| AWQ PCU v1, 16 PE x 4 way | 0.0344 W | 1.07 | 32.0 |
+| AWQ PCU v2, 16 PE x 4 way | 0.0344 W | 1.07 | 32.0 |
 | P3-LLM PCU, FP4/FP8, 16 PE x 4 way | 0.0351 W | 1.10 | 32.0 |
 | SpinQuant W4A4 PCU, 16 PE x 4 way | 0.0167 W | 0.52 | 32.0 |
 | HBM-PIM FP16 SIMD 16 lane | 0.0151 W | 3.78 | 4.0 |

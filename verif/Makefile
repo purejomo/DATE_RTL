@@ -23,7 +23,7 @@ TESTS := fp16_mul \
          rabit_pcu_acc16 \
          rabit_fs rabit_fs_pipe rabit_fs_h16 \
          p3llm_dequant_arith p3llm_dequant \
-         awq_dequant_arith \
+         awq_dequant_arith pcu_bf16_32_dq pcu_bf16_64_dq \
          spinquant_pe spinquant_acc \
          spinquant_pcu spinquant_pcu_nolatch spinquant_pcu_acc32 \
          spinquant_pcu_r2e2 spinquant_pcu_r2 spinquant_pcu_r4 spinquant_pcu_w512
@@ -214,6 +214,33 @@ P3LLM_DEQUANT_RTL := $(P3LLM_DEQUANT_DIR)/p3llm_pkg.sv \
 
 AWQ_DQ_DIR := $(RTL)/2_awq_p3llm_8pe_v2_dequant_rne
 
+AWQ_DQ8_DIR  := $(RTL)/2_awq_p3llm_8pe_v2_dequant_rne
+AWQ_DQ16_DIR := $(RTL)/2_awq_p3llm_16pe_v2_dequant_rne
+
+AWQ_DQ_PCU_TESTS := pcu_bf16_32_dq pcu_bf16_64_dq pcu_fp16_32_dq
+
+ifneq ($(filter $(TEST),$(AWQ_DQ_PCU_TESTS)),)
+MODULE          := test_int4float_pcu_dq
+PCU_IS_8PE      := $(findstring _32,$(TEST))
+PCU_NUM_PES     := $(if $(PCU_IS_8PE),8,16)
+PCU_FMT         := $(if $(findstring fp16,$(TEST)),fp16,bf16)
+PCU_SUFFIX      := $(if $(PCU_IS_8PE),pcu32,pcu_top)
+DQ_DIR          := $(if $(PCU_IS_8PE),$(AWQ_DQ8_DIR),$(AWQ_DQ16_DIR))
+COCOTB_TOPLEVEL := int4$(PCU_FMT)_$(PCU_SUFFIX)_dq
+VERILOG_SOURCES := $(DQ_DIR)/compressor_4to2.sv \
+                   $(DQ_DIR)/int4_asym_decode.v \
+                   $(DQ_DIR)/int4float_align.v \
+                   $(DQ_DIR)/int4float_pe.v \
+                   $(DQ_DIR)/int4float_pcu.v \
+                   $(DQ_DIR)/awq_dq_fixed32_float16_mul_pipe.sv \
+                   $(DQ_DIR)/awq_dq_fp32_add_pipe.sv \
+                   $(DQ_DIR)/awq_dq_fp32_pack_pipe.sv \
+                   $(DQ_DIR)/int4float_pcu_dq.sv \
+                   $(DQ_DIR)/$(COCOTB_TOPLEVEL).v
+EXTRA_ARGS      += --assert -DAWQ_DQ_ASSERTIONS
+export PCU_NUM_PES PCU_FMT
+endif
+
 ifeq ($(TEST),awq_dequant_arith)
 COCOTB_TOPLEVEL := awq_dequant_arith_tb
 MODULE          := test_awq_dequant_arith
@@ -322,9 +349,26 @@ RABIT_MANT_W      := 10
 RABIT_SHIFTER_EN  := 1
 RABIT_ACC_W       := 16
 RABIT_SHIFT_RND   := 1
+# The end-to-end GEMV runs to k = 1024 here rather than the 4096 the 32-bit
+# rows use, because a 16-bit accumulator cannot represent a 4096-deep sweep:
+# one chunk contributes up to NIN * 2**MANT_W = 16384 accumulator LSB and there
+# are 4096/16 = 256 chunks, so the worst case needs 23 bits. Measured relative
+# error against the exact rational reference, one seed, 64 x k:
+#
+#     k =  256   1.1e-03      k = 2048   4.9e-02
+#     k =  512   8.8e-04      k = 4096   1.8e-01
+#     k = 1024   8.9e-04
+#
+# Flat at the MANT_W = 10 quantization floor to k = 1024, then the accumulator
+# starts saturating. The RTL still matches the golden model bit for bit at
+# every depth -- status_sticky[0] reports the saturation and check_sticky
+# compares it -- so this is a property of the design point, not a defect. It is
+# the accuracy side of the area saving this row exists to measure, and it is
+# why the acc16 axis needs the accuracy sweep the extension plan leaves open.
+RABIT_GEMV_DIN    := 1024
 VERILOG_SOURCES   := $(RABIT_ACC16_RTL)
 EXTRA_ARGS        += --assert -DRABIT_ASSERTIONS
-export RABIT_MANT_W RABIT_SHIFTER_EN RABIT_ACC_W RABIT_SHIFT_RND
+export RABIT_MANT_W RABIT_SHIFTER_EN RABIT_ACC_W RABIT_SHIFT_RND RABIT_GEMV_DIN
 endif
 
 # --- RaBiT full-scale PCU -------------------------------------------------

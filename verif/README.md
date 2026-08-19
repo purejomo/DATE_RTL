@@ -55,11 +55,17 @@ make distclean          # 산출물 삭제
 | awq-p3-llm | `pcu_bf16_32` | `int4bf16_pcu32` | PCU 8 PE (v2, PE별 ZP), bfloat16 activation |
 | awq-p3-llm | `pcu_fp16_32` | `int4fp16_pcu32` | 같은 것, binary16 activation |
 | awq-p3-llm | `pcu_bf16_64` | `int4bf16_pcu_top` | PCU 16 PE (v2, PE별 ZP), bfloat16 activation |
+| awq-p3-llm | `pcu_bf16_32_acc16` | `int4bf16_pcu32_acc16` | 축② 누산기 16-bit, 누산 전 RNE narrow (`ACC_RSH` 12). 8 PE |
+| awq-p3-llm | `pcu_fp16_32_acc16` | `int4fp16_pcu32_acc16` | 같은 것, binary16 activation (`ACC_RSH` 15) |
+| awq-p3-llm | `pcu_bf16_64_acc16` | `int4bf16_pcu_top_acc16` | 같은 것, 16 PE |
+| awq-p3-llm | `pcu_bf16_32_dq` | `int4bf16_pcu32_dq` | 축③ end-to-end: raw INT32 대조 + group 스냅샷·태그 FIFO·배치 시퀀서를 거친 최종 BF16 벡터, sticky status 까지 golden model 대조. 8 PE |
+| awq-p3-llm | `pcu_bf16_64_dq` | `int4bf16_pcu_top_dq` | 같은 것, 16 PE |
 | awq-p3-llm | `awq_dequant_arith` | `awq_dequant_arith_tb` | PU 내 dequant 3-pipe: INT32×scale→FP32, FP32 누산, FP32→BF16/FP16 RNE pack. BF16·FP16 양쪽 파라미터를 한 번에 |
 | p3llm | `p3llm_decoders` | `decoder_tb` | FP8-E4M3 · S0E4M4 · BitMoD4 · INT4, **전 코드 전수** |
 | p3llm | `p3llm_compressor` | `compressor_tb` | 4:2 compressor의 sum/carry |
 | p3llm | `p3llm_pe` | `p3llm_pe` | PE 지시 시퀀스 |
 | p3llm | `p3llm_pcu` | `p3llm_pcu` | PCU 랜덤 타일 회귀 |
+| p3llm | `p3llm_pcu_acc16` | `p3llm_pcu_acc16` | 축② 누산기 16-bit, `ACC_RSH` 16 (세 op_mode 공통). 같은 랜덤 타일 회귀 |
 | p3llm | `p3llm_dequant_arith` | `p3llm_dequant_arith_tb` | PU 내 dequant 3-pipe 경계값. 최종 pack 은 FP8-E4M3 이며 `fp8_e4m3_decoder` 의 역함수인지 **254개 유한 코드 전수 round-trip** |
 | p3llm | `p3llm_dequant` | `p3llm_pcu_dequant` | raw PCU + 공유 dequant 엔진 end-to-end, 세 op_mode. 최종 FP8 벡터와 sticky status 를 golden model 과 대조 |
 | rabit | `rabit_cvt` | `rabit_cvt_tb` | convert-on-write: RNE, subnormal, max-exp 경계. MANT_W 12/10 + SHIFTER_EN 0 동시 |
@@ -70,9 +76,15 @@ make distclean          # 산출물 삭제
 | rabit | `rabit_pcu_m10` | `rabit_pcu_m10` | 같은 것, MANT_W 10 |
 | rabit | `rabit_pcu_noshift` | `rabit_pcu_noshift` | 같은 것, SHIFTER_EN 0 |
 | rabit | `rabit_pcu_m10_noshift` | `rabit_pcu_m10_noshift` | 같은 것, 두 노브 동시 |
+| rabit | `rabit_pcu_acc16` | `rabit_pcu_acc16` | 축② `ACC_W` 16 · `MANT_W` 10 · `SHIFT_RND` 1. 같은 end-to-end GEMV |
 | rabit-fs | `rabit_fs` | `rabit_pcu_fs` | full-scale variant: h·x를 PCU에서 곱하고 g 역양자화까지 수행, 최종 binary16 y를 bit-정합 대조 |
 | rabit-fs | `rabit_fs_pipe` | `rabit_pcu_fs_p` | 같은 것, `H_MUL_PIPE = 1` (곱셈기와 convert 사이에 레지스터, tCCD_S 충족) |
 | rabit-fs | `rabit_fs_h16` | `rabit_pcu_fs_h16` | 같은 것, `H_FMT = FP16_3WR` (chunk당 WR 3개) |
+
+rabit-fs 세 행의 RTL 은 `rtl/4_rabit_dequant_rne` (구 `4_rabit_fullscale`) 에 있다.
+테스트 이름과 top 이름은 유지했다 — `verif/models/rabit_fs_model.py`,
+`synth/build_rabit_fs_report.py`, `results/` 산출물 이름이 모두 여기에 걸려 있다.
+
 | spinquant | `spinquant_pe` | `spinquant_pe` | (weight, activation) 코드쌍 전수, way별 one-hot, 24b chain 경계, 랜덤 |
 | spinquant | `spinquant_acc` | `spinquant_acc_regfile` | entry 격리, accumulate/drain 두 읽기 포트 독립성, reset |
 | spinquant | `spinquant_pcu` | `spinquant_pcu` | end-to-end W4A4 GEMV (K=128/1024/14336), 정수 GEMV reference 대조. 2-pump·entry interleave·최악 누산·overflow 포함 |

@@ -111,13 +111,35 @@ def exp_offset(ref_exp: int, guard: int = GUARD_DEFAULT) -> int:
     return ref_exp - guard
 
 
+def _fp32_class(bits: int) -> str:
+    """'normal', 'zero', 'subnormal', 'inf' or 'nan' for a binary32 pattern."""
+
+    exponent = (bits >> 23) & 0xFF
+    fraction = bits & 0x7FFFFF
+    if exponent == 0xFF:
+        return "inf" if fraction == 0 else "nan"
+    if exponent == 0:
+        return "zero" if fraction == 0 else "subnormal"
+    return "normal"
+
+
 class AwqDequantGolden:
-    """Stateful per-PE FP32 accumulation across weight groups."""
+    """Stateful per-PE FP32 accumulation across weight groups.
+
+    ``sticky_invalid`` and ``sticky_overflow`` mirror the RTL's sticky status
+    bits so a test can require agreement instead of assuming the stimulus stays
+    in range. They are not decoration: with activations spread over the whole
+    bfloat16 exponent range, ``acc * scale * 2**(ref_exp - GUARD)`` genuinely
+    reaches binary32 infinity, and the adder's input contract then reports the
+    non-finite operand as invalid.
+    """
 
     def __init__(self, num_pes: int, fmt: tuple[int, int] = BF16) -> None:
         self.num_pes = num_pes
         self.fmt = fmt
         self.accumulators32 = [0] * num_pes
+        self.sticky_invalid = 0
+        self.sticky_overflow = 0
 
     def reset(self) -> None:
         self.accumulators32[:] = [0] * self.num_pes
@@ -147,12 +169,36 @@ class AwqDequantGolden:
             product = int32_scale_to_fp32(
                 raw_int32[pe], scale_bits[pe], offset, self.fmt
             )
+            # The multiplier reports overflow when it packs an infinity.
+            if _fp32_class(product) == "inf":
+                self.sticky_overflow = 1
+
+            # The adder's contract is finite normal binary32 or signed zero;
+            # anything else asserts invalid and produces a quiet NaN.
+            operands = (self.accumulators32[pe], product)
+            if any(_fp32_class(v) in ("inf", "nan", "subnormal")
+                   for v in operands):
+                self.sticky_invalid = 1
+
             self.accumulators32[pe] = add_fp32_rne(
                 self.accumulators32[pe], product
             )
+            if _fp32_class(self.accumulators32[pe]) == "inf":
+                self.sticky_overflow = 1
 
         if not dot_last:
             return None
-        return tuple(
-            fp32_to_float16(acc, self.fmt) for acc in self.accumulators32
-        )
+
+        results = []
+        for acc in self.accumulators32:
+            if _fp32_class(acc) in ("inf", "nan"):
+                self.sticky_invalid = 1
+            packed = fp32_to_float16(acc, self.fmt)
+            exponent_bits, fraction_bits = self.fmt
+            infinity = ((1 << exponent_bits) - 1) << fraction_bits
+            if (_fp32_class(acc) not in ("inf", "nan")
+                    and (packed & ~(1 << (exponent_bits + fraction_bits)))
+                    == infinity):
+                self.sticky_overflow = 1
+            results.append(packed)
+        return tuple(results)

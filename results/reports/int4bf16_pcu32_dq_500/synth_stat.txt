@@ -1,0 +1,84 @@
+
+19. Printing statistics.
+
+=== int4bf16_pcu32_dq ===
+
+   Number of wires:              53572
+   Number of wire bits:          54314
+   Number of public wires:        3209
+   Number of public wire bits:    3951
+   Number of ports:                 23
+   Number of port bits:            765
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              50346
+     AND2_X1                      1054
+     AND2_X2                        10
+     AND3_X1                       132
+     AND3_X2                         5
+     AND4_X1                        21
+     AND4_X2                         1
+     AOI21_X1                     3379
+     AOI21_X2                       82
+     AOI21_X4                       22
+     AOI22_X1                       89
+     AOI22_X2                        4
+     BUF_X1                       1802
+     BUF_X16                        12
+     BUF_X2                        120
+     BUF_X32                         9
+     BUF_X4                        100
+     BUF_X8                         21
+     CLKBUF_X1                     210
+     CLKBUF_X2                       4
+     CLKBUF_X3                      16
+     DFF_X1                       3597
+     INV_X1                       7988
+     INV_X16                         1
+     INV_X2                         89
+     INV_X32                         1
+     INV_X4                         28
+     INV_X8                          1
+     MUX2_X1                        58
+     NAND2_X1                    10609
+     NAND2_X2                      154
+     NAND2_X4                       47
+     NAND3_X1                     2401
+     NAND3_X2                       13
+     NAND3_X4                        4
+     NAND4_X1                      277
+     NAND4_X2                        3
+     NAND4_X4                        1
+     NOR2_X1                      3766
+     NOR2_X2                       111
+     NOR2_X4                        37
+     NOR3_X1                       356
+     NOR3_X2                         8
+     NOR3_X4                         1
+     NOR4_X1                       483
+     NOR4_X2                         5
+     NOR4_X4                         3
+     OAI211_X2                       4
+     OAI21_X1                     4644
+     OAI21_X2                       65
+     OAI21_X4                       32
+     OAI221_X1                     538
+     OAI221_X2                       3
+     OAI22_X1                     1653
+     OR2_X1                       1810
+     OR2_X2                         16
+     OR2_X4                          4
+     OR3_X1                         82
+     OR3_X2                          6
+     OR3_X4                          1
+     OR4_X1                         13
+     OR4_X4                          1
+     XNOR2_X1                     4092
+     XNOR2_X2                       82
+     XOR2_X1                       156
+     XOR2_X2                         9
+
+   Chip area for module '\int4bf16_pcu32_dq': 61701.892000
+     of which used for sequential elements: 16265.634000 (26.36%)
+

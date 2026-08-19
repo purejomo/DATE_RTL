@@ -1,9 +1,9 @@
 label,top,area_um2,cells,dffs,clock_ns
 compute_hbmpim_250,hbmpim_fp16_pcu_16_lane,60175.850000,56433,1578,4.0
 int4bf16_pcu32_500,int4bf16_pcu32,36918.672000,32282,1566,2.0
-int4bf16_pcu_top_pcu500,int4bf16_pcu_top,71745.254000,62010,3054,2.0
+int4bf16_pcu_top_pcu500,int4bf16_pcu_top,72279.648000,63288,3054,2.0
 p3llm_pcu_500,p3llm_pcu,71287.202000,61847,2594,2.0
-p3llm_pcu_dequant_500,p3llm_pcu_dequant,108067.554000,86514,6930,2.0
+p3llm_pcu_dequant_500,p3llm_pcu_dequant,106359.036000,85646,6794,2.0
 rabit_pcu_250,rabit_pcu,45253.516000,37126,2208,4.0
 rabit_pcu_500,rabit_pcu,45253.516000,37126,2208,2.0
 rabit_pcu_m10_250,rabit_pcu_m10,42096.628000,34727,2192,4.0
@@ -38,3 +38,9 @@ rabit_pcu_16pe_250,rabit_pcu_16pe,69936.986000,59822,2341,4.0
 rabit_pcu_16pe_g4_250,rabit_pcu_16pe_g4,86501.870000,69335,4392,4.0
 rabit_pcu_g8_250,rabit_pcu_g8,60711.042000,44654,4259,4.0
 rabit_pcu_g8_m10_250,rabit_pcu_g8_m10,56905.646000,42081,4243,4.0
+int4bf16_pcu32_acc16_500,int4bf16_pcu32_acc16,36193.822000,31671,1438,2.0
+int4bf16_pcu_top_acc16_500,int4bf16_pcu_top_acc16,68569.480000,60168,2798,2.0
+p3llm_pcu_acc16_500,p3llm_pcu_acc16,62151.964000,55517,2338,2.0
+rabit_pcu_acc16_250,rabit_pcu_acc16,32208.876000,27348,1168,4.0
+int4bf16_pcu32_dq_500,int4bf16_pcu32_dq,61701.892000,50346,3597,2.0
+int4bf16_pcu_top_dq_500,int4bf16_pcu_top_dq,105060.690000,85639,6336,2.0
