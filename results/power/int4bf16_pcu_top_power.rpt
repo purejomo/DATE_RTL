@@ -4,16 +4,16 @@ This program is licensed under the BSD-3 license. See the LICENSE file for detai
 Components of this program may be licensed under more restrictive licenses which must be honored.
 [INFO ODB-0227] LEF file: /home/ghlee/.cache/openroad-user/OpenROAD-flow-scripts/flow/platforms/nangate45/lef/NangateOpenCellLibrary.tech.lef, created 22 layers, 27 vias
 [INFO ODB-0227] LEF file: /home/ghlee/.cache/openroad-user/OpenROAD-flow-scripts/flow/platforms/nangate45/lef/NangateOpenCellLibrary.macro.mod.lef, created 135 library cells
-activity source: vectorless, input activity 0.20
+activity source: vectorless global, activity 0.20
 === report_power int4bf16_pcu_top ===
 Group                  Internal  Switching    Leakage      Total
                           Power      Power      Power      Power (Watts)
 ----------------------------------------------------------------
-Sequential             1.75e-02   1.65e-03   2.37e-04   1.94e-02  21.2%
-Combinational          3.48e-02   3.57e-02   1.43e-03   7.20e-02  78.8%
+Sequential             8.38e-03   6.20e-04   2.42e-04   9.24e-03  26.8%
+Combinational          1.15e-02   1.23e-02   1.38e-03   2.52e-02  73.2%
 Clock                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
 Macro                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
 Pad                    0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
 ----------------------------------------------------------------
-Total                  5.23e-02   3.74e-02   1.67e-03   9.14e-02 100.0%
-                          57.3%      40.9%       1.8%
+Total                  1.99e-02   1.29e-02   1.62e-03   3.44e-02 100.0%
+                          57.7%      37.6%       4.7%

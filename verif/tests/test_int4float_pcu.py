@@ -2,8 +2,13 @@
 
 The datapath is fixed point end to end, so the oracle is the pure-integer
 `int4float_pcu_model`, the same style of model the P3-LLM PCU is verified
-against. Activation format and lane widths come from the environment so one
-test module covers both the binary16 and bfloat16 rows.
+against. Format, lane count and zero-point layout all come from the
+environment, so one test module covers every AWQ PCU row:
+
+    PCU_NUM_PES    8 for the pcu32 tops, 16 for the pcu_top build
+    PCU_ZP_PER_PE  1 = one four-bit zero point per PE (v2, rtl/2_awq_p3llm_8pe_v2)
+                   0 = one nibble broadcast to every PE (v1, rtl/2_awq_p3llm_16pe)
+    PCU_FMT        bf16 or fp16
 """
 
 from __future__ import annotations
@@ -17,18 +22,20 @@ from cocotb.triggers import ReadOnly, RisingEdge
 
 from int4float_pcu_model import BF16, FP16, PcuModel, reference_exponent
 
-FMT = BF16 if os.environ.get("PCU_FORMAT", "fp16") == "bf16" else FP16
+FMT = FP16 if os.environ.get("PCU_FMT", "bf16") == "fp16" else BF16
 ITERATIONS = int(os.environ.get("PCU_ITERS", "4000"))
 SEED = 0x50435530
 LANES = 4
 NUM_PES = int(os.environ.get("PCU_NUM_PES", "16"))
+ZP_PER_PE = os.environ.get("PCU_ZP_PER_PE", "0") == "1"
 LATENCY = 4          # accept edge to o_valid
 
-FP16_CORNERS = (0x0000, 0x8000, 0x0001, 0x03FF, 0x0400, 0x3C00, 0xBC00,
-                0x4000, 0x7BFF, 0x7C00, 0xFC00, 0x7E00, 0x3555, 0x1234)
-BF16_CORNERS = (0x0000, 0x8000, 0x0001, 0x007F, 0x0080, 0x3F80, 0xBF80,
-                0x4000, 0x7F7F, 0x7F80, 0xFF80, 0x7FC0, 0x3F00, 0x4123)
-CORNERS = BF16_CORNERS if FMT is BF16 else FP16_CORNERS
+# bfloat16 encodings: zero, negative zero, the smallest subnormal, the
+# subnormal/normal boundary, +-1, 2, the largest finite, +-inf, a NaN, and two
+# ordinary values. The same words are legal fp16 encodings, so the sweep hits
+# that format's corners too even though they name different values there.
+CORNERS = (0x0000, 0x8000, 0x0001, 0x007F, 0x0080, 0x3F80, 0xBF80,
+           0x4000, 0x7F7F, 0x7F80, 0xFF80, 0x7FC0, 0x3F00, 0x4123)
 
 
 def signed32(value: int) -> int:
@@ -59,7 +66,13 @@ async def test_random_tiles(dut) -> None:
                 for _ in range(LANES)]
         weights = [[rng.randrange(16) for _ in range(LANES)]
                    for _ in range(NUM_PES)]
-        zp = rng.randrange(16)
+        # v2 gives each output PE its own zero point; v1 broadcasts one
+        # nibble. Drive the port the design actually has, and hand the model
+        # the matching spelling.
+        zp = ([rng.randrange(16) for _ in range(NUM_PES)] if ZP_PER_PE
+              else rng.randrange(16))
+        zp_word = (sum(z << (4 * pe) for pe, z in enumerate(zp))
+                   if ZP_PER_PE else zp)
         ref = reference_exponent(FMT, acts)
         clear = iteration % 64 == 0
         enable = True
@@ -77,7 +90,7 @@ async def test_random_tiles(dut) -> None:
             weights[pe][lane] << ((pe * LANES + lane) * 4)
             for pe in range(NUM_PES) for lane in range(LANES)
         )
-        dut.i_weight_zp.value = zp
+        dut.i_weight_zp.value = zp_word
 
         await ReadOnly()
         assert int(dut.i_ready.value) == 1, "PCU not ready"
@@ -103,7 +116,9 @@ async def test_random_tiles(dut) -> None:
             f"iteration {iteration}: o_invalid mismatch"
         await RisingEdge(dut.clk)
 
+    layout = "per-PE zp" if ZP_PER_PE else "broadcast zp"
     dut._log.info(
         f"{ITERATIONS} tiles matched the reference "
-        f"({'bf16' if FMT is BF16 else 'fp16'} activations)"
+        f"({os.environ.get('PCU_FMT', 'bf16')} activations, "
+        f"{NUM_PES} PEs, {layout})"
     )

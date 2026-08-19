@@ -142,16 +142,16 @@ def main() -> int:
 
     add("# RaBiT PCU: full-scale variant against the base variant")
     add("")
-    add("What this measures: the area and throughput cost of moving the RaBiT")
-    add("input scale h and output scale g from the NPU into the PCU.")
+    add("What this measures: the area and throughput cost of moving the RaBiT input")
+    add("scale h and output scale g from the NPU into the PCU.")
     add("")
-    add("Conditions are the repository's: Nangate45 typical (1.10 V, 25 C),")
-    add("Yosys 0.52 ABC area mode + OpenROAD, logic synthesis only, no place and")
-    add("route, so the numbers are cell area and carry no routing. The primary")
-    add("clock point is 250 MHz, matching the HBM-PIM baseline row; the PCU")
-    add("spends two cycles per column command, so 4.0 ns of PCU period is 8.0 ns")
-    add("of tCCD_S. The input GRF and the CRF are outside the boundary in both")
-    add("RaBiT variants; the accumulator array is inside both.")
+    add("- Conditions: Nangate45 typical (1.10 V, 25 C), Yosys 0.52 ABC area mode +")
+    add("  OpenROAD, logic synthesis only, no place and route — cell area, no routing.")
+    add("- Primary clock point is 250 MHz, matching the HBM-PIM baseline row. The PCU")
+    add("  spends two cycles per column command, so 4.0 ns of PCU period is 8.0 ns of")
+    add("  tCCD_S.")
+    add("- Boundary, both RaBiT variants: input GRF and CRF outside, accumulator array")
+    add("  inside.")
     add("")
 
     # ---- headline table ---------------------------------------------------
@@ -178,20 +178,22 @@ def main() -> int:
                if baseline else "."))
         if fs_p is not None:
             add("")
-            add(f"The timing-closing build costs {fs_p-fs:,.0f} um2 more than the "
-                f"specified one -- one 256-bit register between the multiply "
-                f"array and the convert unit -- and no column slots at all. "
-                f"Read the `H_MUL_PIPE` row as the deliverable and the plain one "
-                f"as the literal reading of the specification; see section 3.")
+            add(f"The timing-closing build costs {fs_p-fs:,.0f} um2 more than "
+                f"the specified one -- one")
+            add("256-bit register between the multiply array and the convert "
+                "unit -- and no")
+            add("column slots at all. Read the `H_MUL_PIPE` row as the "
+                "deliverable and the plain")
+            add("one as the literal reading of the specification (section 3).")
         add("")
 
     # ---- module breakdown -------------------------------------------------
     add("## 2. Module breakdown")
     add("")
     add("Each block is synthesized on its own with registers at both ends, so an")
-    add("isolated combinational block still reports a meaningful path. The sums")
-    add("do not have to equal the flat tops above: the flow flattens everything,")
-    add("so a top gets cross-boundary optimization the isolated blocks do not.")
+    add("isolated combinational block still reports a meaningful path. The sums need not")
+    add("equal the flat tops above — the flow flattens everything, so a top gets")
+    add("cross-boundary optimization the isolated blocks do not.")
     add("")
     add("| module | in | instances | area each (um2) | area total (um2) | what it is |")
     add("|---|---|---:|---:|---:|---|")
@@ -205,39 +207,42 @@ def main() -> int:
             f"{fmt_area(total)} | {what} |")
     add("")
     if fs_only_total:
-        add(f"Blocks the full-scale variant adds, summed in isolation: "
-            f"**{fs_only_total:,.0f} um2**.")
         if base is not None and fs is not None:
-            add(f"The flat-top delta is {fs-base:,.0f} um2; the difference is "
-                f"cross-boundary optimization plus the rewiring in the top "
-                f"(write-path sequencing, accumulator-port arbitration).")
+            add(f"Blocks the full-scale variant adds, summed in isolation: "
+                f"**{fs_only_total:,.0f} um2**. The")
+            add(f"flat-top delta is {fs-base:,.0f} um2; the difference is "
+                f"cross-boundary optimization plus")
+            add("the rewiring in the top (write-path sequencing, "
+                "accumulator-port arbitration).")
+        else:
+            add(f"Blocks the full-scale variant adds, summed in isolation: "
+                f"**{fs_only_total:,.0f} um2**.")
         add("")
 
     # ---- timing -----------------------------------------------------------
     add("## 3. Timing")
     add("")
-    add("Worst setup path per row. A met slack at 2.0 ns says the design closes")
-    add("at 500 MHz of PCU clock, which is 250 MHz of column-command rate.")
+    add("Worst setup path per row. A met slack at 2.0 ns means the design closes at")
+    add("500 MHz of PCU clock, which is 250 MHz of column-command rate.")
     add("")
-    add("**This is the one place the specified datapath does not hold up.** With")
-    add("the h multiply, the binary16 rounding and the block convert all in one")
-    add("cycle, the write path is a single combinational chain from `wr_data_i`")
-    add("to `cvt_blk_o`, and it misses even the 250 MHz point. Splitting it with")
-    add("`H_MUL_PIPE = 1` costs no column slots -- cycle 0 multiplies u_1, cycle 1")
-    add("converts it while multiplying u_2, and the conversion of u_2 lands in the")
-    add("next slot's pump 0, one cycle before pump 1 reads it. The deadline")
-    add("assertion in `rabit_pcu_fs_top` checks exactly that, and the bit-exact")
-    add("regression passes unchanged in both modes.")
+    add("**This is the one place the specified datapath does not hold up.** With the h")
+    add("multiply, the binary16 rounding and the block convert all in one cycle, the")
+    add("write path is a single combinational chain from `wr_data_i` to `cvt_blk_o`, and")
+    add("it misses even the 250 MHz point.")
     add("")
-    add("Note what the base row says before reading the 500 MHz rows: the base")
-    add("variant misses 2.0 ns too, on its own convert path, so 500 MHz is not a")
-    add("point either RaBiT variant closes and the comparison that matters is at")
-    add("250 MHz. There, `H_MUL_PIPE = 1` has *more* slack than the base variant")
-    add("(1.22 ns against 1.16 ns), because the register also shortens the base")
-    add("path it inherited: the convert unit now starts from a flop instead of")
-    add("from the write port with its input delay. What is left as the worst path")
-    add("is the sticky h-overflow reduction across the 16 lanes, which is a status")
-    add("bit and could be registered a cycle later if a faster point were needed.")
+    add("- **`H_MUL_PIPE = 1` fixes it for free in slots.** Cycle 0 multiplies u_1,")
+    add("  cycle 1 converts it while multiplying u_2, and u_2's conversion lands in the")
+    add("  next slot's pump 0, one cycle before pump 1 reads it. The deadline assertion")
+    add("  in `rabit_pcu_fs_top` checks exactly that, and the bit-exact regression passes")
+    add("  unchanged in both modes.")
+    add("- **500 MHz is not a point either variant closes** -- the base variant misses")
+    add("  2.0 ns too, on its own convert path. The comparison that matters is 250 MHz.")
+    add("- **At 250 MHz, `H_MUL_PIPE = 1` has *more* slack than the base variant**")
+    add("  (1.22 ns against 1.16 ns): the register also shortens the base path it")
+    add("  inherited, since the convert unit now starts from a flop instead of from the")
+    add("  write port with its input delay. What is left as the worst path is the sticky")
+    add("  h-overflow reduction across the 16 lanes -- a status bit, registerable a cycle")
+    add("  later if a faster point were needed.")
     add("")
     add("| row | clock | period (ns) | slack (ns) | met | critical endpoint |")
     add("|---|---|---:|---:|:---:|---|")
@@ -256,11 +261,11 @@ def main() -> int:
     add("## 4. Throughput")
     add("")
     add("Slot-level count from `tools/pack_rabit_fs.py`, which walks both command")
-    add("streams. A column slot is one column command and two PCU cycles. The")
-    add("inner loop is identical in both variants -- two writes and four reads per")
-    add("16-input chunk -- so the whole difference is the per-stripe overhead:")
-    add("four g-load writes, and a drain that holds the accumulator port for 16")
-    add("cycles instead of the base's four 2-cycle drain commands.")
+    add("streams. A column slot is one column command and two PCU cycles. The inner loop")
+    add("is identical in both variants (two writes and four reads per 16-input chunk), so")
+    add("the whole difference is the per-stripe overhead: four g-load writes, and a drain")
+    add("that holds the accumulator port for 16 cycles instead of the base's four 2-cycle")
+    add("drain commands.")
     add("")
     add("| dout x din | base slots | FS slots | g load | drain | FS/base | cost |")
     add("|---|---:|---:|---:|---:|---:|---:|")
@@ -272,10 +277,10 @@ def main() -> int:
             f"{r['throughput_ratio']*100:.3f} % | "
             f"{r['overhead_share']*100:.3f} % |")
     add("")
-    add("The 128 x 512 row is there to show where the overhead stops being")
-    add("negligible: it is a per-stripe cost amortized over the k sweep, so it")
-    add("scales as 1/din. At the projection-layer shapes RaBiT targets it is")
-    add("below the 1 % the specification allows.")
+    add("The 128 x 512 row shows where the overhead stops being negligible: it is a")
+    add("per-stripe cost amortized over the k sweep, so it scales as 1/din. At the")
+    add("projection-layer shapes RaBiT targets it stays below the 1 % the specification")
+    add("allows.")
     add("")
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

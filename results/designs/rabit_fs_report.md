@@ -1,15 +1,15 @@
 # RaBiT PCU: full-scale variant against the base variant
 
-What this measures: the area and throughput cost of moving the RaBiT
-input scale h and output scale g from the NPU into the PCU.
+What this measures: the area and throughput cost of moving the RaBiT input
+scale h and output scale g from the NPU into the PCU.
 
-Conditions are the repository's: Nangate45 typical (1.10 V, 25 C),
-Yosys 0.52 ABC area mode + OpenROAD, logic synthesis only, no place and
-route, so the numbers are cell area and carry no routing. The primary
-clock point is 250 MHz, matching the HBM-PIM baseline row; the PCU
-spends two cycles per column command, so 4.0 ns of PCU period is 8.0 ns
-of tCCD_S. The input GRF and the CRF are outside the boundary in both
-RaBiT variants; the accumulator array is inside both.
+- Conditions: Nangate45 typical (1.10 V, 25 C), Yosys 0.52 ABC area mode +
+  OpenROAD, logic synthesis only, no place and route — cell area, no routing.
+- Primary clock point is 250 MHz, matching the HBM-PIM baseline row. The PCU
+  spends two cycles per column command, so 4.0 ns of PCU period is 8.0 ns of
+  tCCD_S.
+- Boundary, both RaBiT variants: input GRF and CRF outside, accumulator array
+  inside.
 
 ## 1. Total area
 
@@ -23,14 +23,17 @@ RaBiT variants; the accumulator array is inside both.
 
 Delta for on-PCU scaling: **48,269 um2**, 106.7 % of the base PCU, 80.2 % of the baseline compute unit.
 
-The timing-closing build costs 1,319 um2 more than the specified one -- one 256-bit register between the multiply array and the convert unit -- and no column slots at all. Read the `H_MUL_PIPE` row as the deliverable and the plain one as the literal reading of the specification; see section 3.
+The timing-closing build costs 1,319 um2 more than the specified one -- one
+256-bit register between the multiply array and the convert unit -- and no
+column slots at all. Read the `H_MUL_PIPE` row as the deliverable and the plain
+one as the literal reading of the specification (section 3).
 
 ## 2. Module breakdown
 
 Each block is synthesized on its own with registers at both ends, so an
-isolated combinational block still reports a meaningful path. The sums
-do not have to equal the flat tops above: the flow flattens everything,
-so a top gets cross-boundary optimization the isolated blocks do not.
+isolated combinational block still reports a meaningful path. The sums need not
+equal the flat tops above — the flow flattens everything, so a top gets
+cross-boundary optimization the isolated blocks do not.
 
 | module | in | instances | area each (um2) | area total (um2) | what it is |
 |---|---|---:|---:|---:|---|
@@ -41,33 +44,33 @@ so a top gets cross-boundary optimization the isolated blocks do not.
 | `g_buffer` | FS only | 1 | 12,484 | 12,484 | 64 x 16b output scales, 4-word fill |
 | `g_dequant_unit` | FS only | 1 | 28,083 | 28,083 | 4 lanes: normalize, 12x11 mul, align-add, fp16 round |
 
-Blocks the full-scale variant adds, summed in isolation: **61,219 um2**.
-The flat-top delta is 48,269 um2; the difference is cross-boundary optimization plus the rewiring in the top (write-path sequencing, accumulator-port arbitration).
+Blocks the full-scale variant adds, summed in isolation: **61,219 um2**. The
+flat-top delta is 48,269 um2; the difference is cross-boundary optimization plus
+the rewiring in the top (write-path sequencing, accumulator-port arbitration).
 
 ## 3. Timing
 
-Worst setup path per row. A met slack at 2.0 ns says the design closes
-at 500 MHz of PCU clock, which is 250 MHz of column-command rate.
+Worst setup path per row. A met slack at 2.0 ns means the design closes at
+500 MHz of PCU clock, which is 250 MHz of column-command rate.
 
-**This is the one place the specified datapath does not hold up.** With
-the h multiply, the binary16 rounding and the block convert all in one
-cycle, the write path is a single combinational chain from `wr_data_i`
-to `cvt_blk_o`, and it misses even the 250 MHz point. Splitting it with
-`H_MUL_PIPE = 1` costs no column slots -- cycle 0 multiplies u_1, cycle 1
-converts it while multiplying u_2, and the conversion of u_2 lands in the
-next slot's pump 0, one cycle before pump 1 reads it. The deadline
-assertion in `rabit_pcu_fs_top` checks exactly that, and the bit-exact
-regression passes unchanged in both modes.
+**This is the one place the specified datapath does not hold up.** With the h
+multiply, the binary16 rounding and the block convert all in one cycle, the
+write path is a single combinational chain from `wr_data_i` to `cvt_blk_o`, and
+it misses even the 250 MHz point.
 
-Note what the base row says before reading the 500 MHz rows: the base
-variant misses 2.0 ns too, on its own convert path, so 500 MHz is not a
-point either RaBiT variant closes and the comparison that matters is at
-250 MHz. There, `H_MUL_PIPE = 1` has *more* slack than the base variant
-(1.22 ns against 1.16 ns), because the register also shortens the base
-path it inherited: the convert unit now starts from a flop instead of
-from the write port with its input delay. What is left as the worst path
-is the sticky h-overflow reduction across the 16 lanes, which is a status
-bit and could be registered a cycle later if a faster point were needed.
+- **`H_MUL_PIPE = 1` fixes it for free in slots.** Cycle 0 multiplies u_1,
+  cycle 1 converts it while multiplying u_2, and u_2's conversion lands in the
+  next slot's pump 0, one cycle before pump 1 reads it. The deadline assertion
+  in `rabit_pcu_fs_top` checks exactly that, and the bit-exact regression passes
+  unchanged in both modes.
+- **500 MHz is not a point either variant closes** -- the base variant misses
+  2.0 ns too, on its own convert path. The comparison that matters is 250 MHz.
+- **At 250 MHz, `H_MUL_PIPE = 1` has *more* slack than the base variant**
+  (1.22 ns against 1.16 ns): the register also shortens the base path it
+  inherited, since the convert unit now starts from a flop instead of from the
+  write port with its input delay. What is left as the worst path is the sticky
+  h-overflow reduction across the 16 lanes -- a status bit, registerable a cycle
+  later if a faster point were needed.
 
 | row | clock | period (ns) | slack (ns) | met | critical endpoint |
 |---|---|---:|---:|:---:|---|
@@ -85,11 +88,11 @@ bit and could be registered a cycle later if a faster point were needed.
 ## 4. Throughput
 
 Slot-level count from `tools/pack_rabit_fs.py`, which walks both command
-streams. A column slot is one column command and two PCU cycles. The
-inner loop is identical in both variants -- two writes and four reads per
-16-input chunk -- so the whole difference is the per-stripe overhead:
-four g-load writes, and a drain that holds the accumulator port for 16
-cycles instead of the base's four 2-cycle drain commands.
+streams. A column slot is one column command and two PCU cycles. The inner loop
+is identical in both variants (two writes and four reads per 16-input chunk), so
+the whole difference is the per-stripe overhead: four g-load writes, and a drain
+that holds the accumulator port for 16 cycles instead of the base's four 2-cycle
+drain commands.
 
 | dout x din | base slots | FS slots | g load | drain | FS/base | cost |
 |---|---:|---:|---:|---:|---:|---:|
@@ -98,8 +101,8 @@ cycles instead of the base's four 2-cycle drain commands.
 | 1024 x 4096 | 49,280 | 49,568 | 0.258 % | 0.581 % | 99.419 % | 0.581 % |
 | 128 x 512 | 784 | 820 | 1.951 % | 4.390 % | 95.610 % | 4.390 % |
 
-The 128 x 512 row is there to show where the overhead stops being
-negligible: it is a per-stripe cost amortized over the k sweep, so it
-scales as 1/din. At the projection-layer shapes RaBiT targets it is
-below the 1 % the specification allows.
+The 128 x 512 row shows where the overhead stops being negligible: it is a
+per-stripe cost amortized over the k sweep, so it scales as 1/din. At the
+projection-layer shapes RaBiT targets it stays below the 1 % the specification
+allows.
 

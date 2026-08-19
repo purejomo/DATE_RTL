@@ -20,7 +20,9 @@ export POWER_TECH_LEF="${ORFS_ROOT}/flow/platforms/nangate45/lef/NangateOpenCell
 export POWER_CELL_LEF="${ORFS_ROOT}/flow/platforms/nangate45/lef/NangateOpenCellLibrary.macro.mod.lef"
 
 mkdir -p "${OUT_DIR}"
+
+report="${OUT_DIR}/${POWER_TOP}_power.rpt"
+
 "${OPENROAD_EXE}" -exit -no_init "${COMPARISON_DIR}/power.tcl" \
-    > "${OUT_DIR}/${POWER_TOP}_power.rpt" 2>&1 || true
-grep -E "^Total|activity source" "${OUT_DIR}/${POWER_TOP}_power.rpt" || \
-    tail -5 "${OUT_DIR}/${POWER_TOP}_power.rpt"
+    > "${report}" 2>&1 || true
+grep -E "^Total|activity source" "${report}" || tail -5 "${report}"

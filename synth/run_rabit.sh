@@ -22,7 +22,7 @@ set -euo pipefail
 
 HERE="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
-RTL="${ROOT}/rtl/5_rabit"
+RTL="${ROOT}/rtl/4_rabit"
 OUT="${ROOT}/build"
 RESULTS="${ROOT}/results"
 
@@ -50,6 +50,20 @@ SWEEP_ROWS=(
     "rabit_blk_cvt_250          : rabit_blk_cvt          : 4.0"
     "rabit_blk_pe_250           : rabit_blk_pe           : 4.0"
     "rabit_blk_acc_250          : rabit_blk_acc          : 4.0"
+    # PE-count study. 8 PE is not a chosen number: WORD_W = NIN*NOUT*NPATH, so a
+    # 256-bit column word with 16-input entries and 2 residual paths leaves
+    # exactly 8 outputs. These two price what doubling it would cost -- with the
+    # resident stripe held at 32 outputs (NGROUP 2) and with it doubled too
+    # (NGROUP 4). Neither raises sustained throughput; see
+    # results/designs/rabit_pe_scaling.md.
+    "rabit_pcu_16pe_250         : rabit_pcu_16pe         : 4.0"
+    "rabit_pcu_16pe_g4_250      : rabit_pcu_16pe_g4      : 4.0"
+    # Stripe-width study. Sustained throughput is set by the WR:RD ratio, not by
+    # the PE count: one activation entry pair (2 WR) feeds NGROUP RD commands.
+    # NGROUP 4 -> 8 widens the resident stripe from 32 to 64 outputs and takes
+    # the duty cycle from 4/6 to 8/10 (+20%), leaving the PE array untouched.
+    "rabit_pcu_g8_250           : rabit_pcu_g8           : 4.0"
+    "rabit_pcu_g8_m10_250       : rabit_pcu_g8_m10       : 4.0"
 )
 
 field() { echo "$1" | cut -d: -f"$2" | tr -d ' '; }

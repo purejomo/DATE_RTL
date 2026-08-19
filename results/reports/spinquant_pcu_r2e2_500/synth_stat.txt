@@ -1,0 +1,81 @@
+
+19. Printing statistics.
+
+=== spinquant_pcu_r2e2 ===
+
+   Number of wires:              40647
+   Number of wire bits:          41956
+   Number of public wires:        2128
+   Number of public wire bits:    3437
+   Number of ports:                 13
+   Number of port bits:           1322
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              39542
+     AND2_X1                       197
+     AND2_X2                        22
+     AND2_X4                         1
+     AND3_X1                        56
+     AND4_X1                         1
+     AOI21_X1                     1269
+     AOI21_X2                      166
+     AOI21_X4                        9
+     AOI22_X1                       46
+     BUF_X1                       1105
+     BUF_X16                        67
+     BUF_X2                        214
+     BUF_X32                        13
+     BUF_X4                        200
+     BUF_X8                        114
+     CLKBUF_X1                     226
+     CLKBUF_X2                       5
+     CLKBUF_X3                      12
+     DFF_X1                       2118
+     INV_X1                       6412
+     INV_X16                         3
+     INV_X2                        193
+     INV_X4                         28
+     INV_X8                          8
+     MUX2_X1                        46
+     NAND2_X1                    11281
+     NAND2_X2                     1132
+     NAND2_X4                      150
+     NAND3_X1                     1761
+     NAND3_X2                      325
+     NAND3_X4                       26
+     NAND4_X1                      111
+     NAND4_X2                       21
+     NAND4_X4                        1
+     NOR2_X1                      1855
+     NOR2_X2                       328
+     NOR2_X4                        85
+     NOR3_X1                        57
+     NOR3_X2                        13
+     NOR3_X4                         5
+     NOR4_X1                        23
+     OAI211_X2                       5
+     OAI21_X1                     5288
+     OAI21_X2                      280
+     OAI21_X4                       28
+     OAI221_X1                      53
+     OAI221_X2                       2
+     OAI22_X1                      568
+     OAI22_X2                       10
+     OAI22_X4                        1
+     OR2_X1                        666
+     OR2_X2                        174
+     OR2_X4                         25
+     OR3_X1                         46
+     OR3_X2                         12
+     OR3_X4                          6
+     OR4_X1                          8
+     OR4_X2                          8
+     XNOR2_X1                     2028
+     XNOR2_X2                      300
+     XOR2_X1                       274
+     XOR2_X2                        55
+
+   Chip area for module '\spinquant_pcu_r2e2': 46812.542000
+     of which used for sequential elements: 9577.596000 (20.46%)
+

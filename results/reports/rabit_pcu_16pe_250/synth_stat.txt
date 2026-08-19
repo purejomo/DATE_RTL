@@ -1,0 +1,80 @@
+
+19. Printing statistics.
+
+=== rabit_pcu_16pe ===
+
+   Number of wires:              61450
+   Number of wire bits:          63376
+   Number of public wires:        2363
+   Number of public wire bits:    4289
+   Number of ports:                 28
+   Number of port bits:           1954
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              59822
+     AND2_X1                       609
+     AND2_X2                        46
+     AND2_X4                         9
+     AND3_X1                        16
+     AND3_X2                         6
+     AND3_X4                         5
+     AND4_X1                         2
+     AOI21_X1                     2991
+     AOI21_X2                      164
+     AOI21_X4                        2
+     AOI22_X1                       78
+     AOI22_X2                        8
+     BUF_X1                        845
+     BUF_X16                        39
+     BUF_X2                        441
+     BUF_X32                        18
+     BUF_X4                        487
+     BUF_X8                        164
+     CLKBUF_X1                     491
+     CLKBUF_X2                       1
+     CLKBUF_X3                      12
+     DFF_X1                       2341
+     INV_X1                       8636
+     INV_X16                         1
+     INV_X2                        210
+     INV_X4                         36
+     INV_X8                          5
+     LOGIC0_X1                       1
+     MUX2_X1                       375
+     NAND2_X1                    16584
+     NAND2_X2                     1001
+     NAND2_X4                      413
+     NAND3_X1                     2094
+     NAND3_X2                       79
+     NAND3_X4                       10
+     NAND4_X1                      240
+     NAND4_X2                        4
+     NAND4_X4                        4
+     NOR2_X1                      2582
+     NOR2_X2                       353
+     NOR2_X4                        99
+     NOR3_X1                       116
+     NOR3_X2                        12
+     NOR3_X4                         2
+     NOR4_X1                        18
+     OAI211_X2                       2
+     OAI21_X1                     7104
+     OAI21_X2                       85
+     OAI21_X4                       10
+     OAI221_X1                     238
+     OAI22_X1                       57
+     OR2_X1                       1801
+     OR2_X2                        833
+     OR2_X4                         91
+     OR3_X1                         34
+     OR3_X2                          6
+     OR4_X1                         31
+     XNOR2_X1                     6925
+     XNOR2_X2                      406
+     XOR2_X1                       441
+     XOR2_X2                       108
+
+   Chip area for module '\rabit_pcu_16pe': 69936.986000
+     of which used for sequential elements: 10586.002000 (15.14%)
+

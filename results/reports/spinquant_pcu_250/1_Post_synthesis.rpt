@@ -1,0 +1,180 @@
+
+==========================================================================
+Post synthesis report_tns
+--------------------------------------------------------------------------
+tns 0.00
+
+==========================================================================
+Post synthesis report_wns
+--------------------------------------------------------------------------
+wns 0.00
+
+==========================================================================
+Post synthesis report_worst_slack
+--------------------------------------------------------------------------
+worst slack 2.09
+
+==========================================================================
+Post synthesis report_checks -path_delay min
+--------------------------------------------------------------------------
+Startpoint: u_pcu.u_acc.entry[0][159]$_SDFFCE_PN0P_
+            (rising edge-triggered flip-flop clocked by core_clock)
+Endpoint: u_pcu.u_acc.entry[0][159]$_SDFFCE_PN0P_
+          (rising edge-triggered flip-flop clocked by core_clock)
+Path Group: core_clock
+Path Type: min
+
+Fanout     Cap    Slew   Delay    Time   Description
+-----------------------------------------------------------------------------
+                  0.00    0.00    0.00   clock core_clock (rise edge)
+                          0.00    0.00   clock network delay (ideal)
+                  0.00    0.00    0.00 ^ u_pcu.u_acc.entry[0][159]$_SDFFCE_PN0P_/CK (DFF_X1)
+     3    4.51    0.01    0.08    0.08 v u_pcu.u_acc.entry[0][159]$_SDFFCE_PN0P_/Q (DFF_X1)
+                                         u_pcu.u_acc.entry[0][151] (net)
+                  0.01    0.00    0.08 v _26827_/A (INV_X1)
+     1    1.66    0.01    0.01    0.10 ^ _26827_/ZN (INV_X1)
+                                         _19921_ (net)
+                  0.01    0.00    0.10 ^ _26828_/B1 (OAI21_X1)
+     1    1.06    0.01    0.01    0.11 v _26828_/ZN (OAI21_X1)
+                                         _00618_ (net)
+                  0.01    0.00    0.11 v u_pcu.u_acc.entry[0][159]$_SDFFCE_PN0P_/D (DFF_X1)
+                                  0.11   data arrival time
+
+                  0.00    0.00    0.00   clock core_clock (rise edge)
+                          0.00    0.00   clock network delay (ideal)
+                          0.00    0.00   clock reconvergence pessimism
+                                  0.00 ^ u_pcu.u_acc.entry[0][159]$_SDFFCE_PN0P_/CK (DFF_X1)
+                          0.00    0.00   library hold time
+                                  0.00   data required time
+-----------------------------------------------------------------------------
+                                  0.00   data required time
+                                 -0.11   data arrival time
+-----------------------------------------------------------------------------
+                                  0.11   slack (MET)
+
+
+
+==========================================================================
+Post synthesis report_checks -path_delay max
+--------------------------------------------------------------------------
+Startpoint: drain_entry_i[0] (input port clocked by core_clock)
+Endpoint: drain_data_o[311] (output port clocked by core_clock)
+Path Group: core_clock
+Path Type: max
+
+Fanout     Cap    Slew   Delay    Time   Description
+-----------------------------------------------------------------------------
+                  0.00    0.00    0.00   clock core_clock (rise edge)
+                          0.00    0.00   clock network delay (ideal)
+                          0.80    0.80 v input external delay
+     1    0.88    0.00    0.00    0.80 v drain_entry_i[0] (in)
+                                         drain_entry_i[0] (net)
+                  0.00    0.00    0.80 v _46910_/A (BUF_X1)
+     5    5.05    0.01    0.03    0.83 v _46910_/Z (BUF_X1)
+                                         _16683_ (net)
+                  0.01    0.00    0.83 v _46919_/A (INV_X1)
+     2    1.95    0.01    0.01    0.84 ^ _46919_/ZN (INV_X1)
+                                         _16692_ (net)
+                  0.01    0.00    0.84 ^ _46920_/A (BUF_X1)
+    10    9.75    0.03    0.04    0.88 ^ _46920_/Z (BUF_X1)
+                                         _16693_ (net)
+                  0.03    0.00    0.88 ^ _47321_/A (BUF_X1)
+    10    9.75    0.03    0.05    0.93 ^ _47321_/Z (BUF_X1)
+                                         _17026_ (net)
+                  0.03    0.00    0.93 ^ _47893_/A (BUF_X1)
+    10   17.14    0.04    0.06    0.99 ^ _47893_/Z (BUF_X1)
+                                         _17497_ (net)
+                  0.04    0.00    0.99 ^ _47950_/A1 (NOR2_X1)
+     1    1.55    0.01    0.01    1.00 v _47950_/ZN (NOR2_X1)
+                                         _17544_ (net)
+                  0.01    0.00    1.00 v _47951_/B2 (OAI22_X1)
+     9    7.80    0.06    0.07    1.08 ^ _47951_/ZN (OAI22_X1)
+                                         drain_data_o[319] (net)
+                  0.06    0.00    1.08 ^ _49162_/A (BUF_X1)
+     1    0.00    0.01    0.03    1.11 ^ _49162_/Z (BUF_X1)
+                                         drain_data_o[311] (net)
+                  0.01    0.00    1.11 ^ drain_data_o[311] (out)
+                                  1.11   data arrival time
+
+                  0.00    4.00    4.00   clock core_clock (rise edge)
+                          0.00    4.00   clock network delay (ideal)
+                          0.00    4.00   clock reconvergence pessimism
+                         -0.80    3.20   output external delay
+                                  3.20   data required time
+-----------------------------------------------------------------------------
+                                  3.20   data required time
+                                 -1.11   data arrival time
+-----------------------------------------------------------------------------
+                                  2.09   slack (MET)
+
+
+
+==========================================================================
+Post synthesis report_checks -unconstrained
+--------------------------------------------------------------------------
+Startpoint: drain_entry_i[0] (input port clocked by core_clock)
+Endpoint: drain_data_o[311] (output port clocked by core_clock)
+Path Group: core_clock
+Path Type: max
+
+Fanout     Cap    Slew   Delay    Time   Description
+-----------------------------------------------------------------------------
+                  0.00    0.00    0.00   clock core_clock (rise edge)
+                          0.00    0.00   clock network delay (ideal)
+                          0.80    0.80 v input external delay
+     1    0.88    0.00    0.00    0.80 v drain_entry_i[0] (in)
+                                         drain_entry_i[0] (net)
+                  0.00    0.00    0.80 v _46910_/A (BUF_X1)
+     5    5.05    0.01    0.03    0.83 v _46910_/Z (BUF_X1)
+                                         _16683_ (net)
+                  0.01    0.00    0.83 v _46919_/A (INV_X1)
+     2    1.95    0.01    0.01    0.84 ^ _46919_/ZN (INV_X1)
+                                         _16692_ (net)
+                  0.01    0.00    0.84 ^ _46920_/A (BUF_X1)
+    10    9.75    0.03    0.04    0.88 ^ _46920_/Z (BUF_X1)
+                                         _16693_ (net)
+                  0.03    0.00    0.88 ^ _47321_/A (BUF_X1)
+    10    9.75    0.03    0.05    0.93 ^ _47321_/Z (BUF_X1)
+                                         _17026_ (net)
+                  0.03    0.00    0.93 ^ _47893_/A (BUF_X1)
+    10   17.14    0.04    0.06    0.99 ^ _47893_/Z (BUF_X1)
+                                         _17497_ (net)
+                  0.04    0.00    0.99 ^ _47950_/A1 (NOR2_X1)
+     1    1.55    0.01    0.01    1.00 v _47950_/ZN (NOR2_X1)
+                                         _17544_ (net)
+                  0.01    0.00    1.00 v _47951_/B2 (OAI22_X1)
+     9    7.80    0.06    0.07    1.08 ^ _47951_/ZN (OAI22_X1)
+                                         drain_data_o[319] (net)
+                  0.06    0.00    1.08 ^ _49162_/A (BUF_X1)
+     1    0.00    0.01    0.03    1.11 ^ _49162_/Z (BUF_X1)
+                                         drain_data_o[311] (net)
+                  0.01    0.00    1.11 ^ drain_data_o[311] (out)
+                                  1.11   data arrival time
+
+                  0.00    4.00    4.00   clock core_clock (rise edge)
+                          0.00    4.00   clock network delay (ideal)
+                          0.00    4.00   clock reconvergence pessimism
+                         -0.80    3.20   output external delay
+                                  3.20   data required time
+-----------------------------------------------------------------------------
+                                  3.20   data required time
+                                 -1.11   data arrival time
+-----------------------------------------------------------------------------
+                                  2.09   slack (MET)
+
+
+
+==========================================================================
+Post synthesis report_power
+--------------------------------------------------------------------------
+Group                  Internal  Switching    Leakage      Total
+                          Power      Power      Power      Power (Watts)
+----------------------------------------------------------------
+Sequential             3.46e-03   1.28e-04   1.51e-04   3.74e-03  40.7%
+Combinational          2.37e-03   2.46e-03   6.15e-04   5.45e-03  59.3%
+Clock                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Macro                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Pad                    0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+----------------------------------------------------------------
+Total                  5.83e-03   2.59e-03   7.65e-04   9.19e-03 100.0%
+                          63.5%      28.2%       8.3%

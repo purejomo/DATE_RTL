@@ -4,6 +4,12 @@
 # Every design in this project is measured under identical conditions, so the
 # flow lives here once instead of being copied into each row's synth/ folder.
 #
+# SYNTH_MEMORY_MAX_BITS is forwarded so a design whose register file is large
+# enough for Yosys to infer a $mem can still be built. It is a guard, not a
+# mapping choice: nangate45 has no RAM macro, so every inferred memory is
+# mapped to flip-flops either way. The default matches the flow's own, so
+# leaving it unset reproduces every existing row bit for bit.
+#
 #   run_block_synth.sh <label> <top_module> <out_dir> <rtl_file> [rtl_file ...]
 #
 # Results land in <out_dir>/{generated,reports,logs,results} and one line is
@@ -50,6 +56,7 @@ make -C "${ORFS_ROOT}/flow" \
     BLOCK_SDC_FILE="${COMPARISON_DIR}/constraint.sdc" \
     FLOW_VARIANT="${FLOW_VARIANT}" \
     CLOCK_PERIOD="${CLOCK_PERIOD}" \
+    SYNTH_MEMORY_MAX_BITS="${SYNTH_MEMORY_MAX_BITS:-4096}" \
     synth-report
 
 flow_reports="${ORFS_ROOT}/flow/reports/nangate45/${TOP}/${FLOW_VARIANT}"

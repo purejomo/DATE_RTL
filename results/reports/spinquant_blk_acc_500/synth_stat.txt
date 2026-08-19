@@ -1,0 +1,39 @@
+
+19. Printing statistics.
+
+=== spinquant_blk_acc ===
+
+   Number of wires:              15667
+   Number of wire bits:          17203
+   Number of public wires:        2057
+   Number of public wire bits:    3593
+   Number of ports:                  9
+   Number of port bits:           1545
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              14634
+     BUF_X1                        701
+     BUF_X16                         1
+     BUF_X2                        302
+     BUF_X4                        211
+     BUF_X8                         18
+     CLKBUF_X1                      63
+     CLKBUF_X2                       6
+     CLKBUF_X3                       1
+     DFF_X1                       2048
+     INV_X1                          4
+     INV_X16                         1
+     INV_X2                          3
+     INV_X4                          1
+     INV_X8                          2
+     NAND2_X1                     4611
+     NAND3_X1                     1539
+     NOR2_X1                      2049
+     NOR3_X1                         1
+     OAI21_X1                     2048
+     OAI22_X1                     1024
+
+   Chip area for module '\spinquant_blk_acc': 21170.940000
+     of which used for sequential elements: 9261.056000 (43.74%)
+

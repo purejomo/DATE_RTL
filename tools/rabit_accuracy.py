@@ -230,19 +230,21 @@ def main(argv=None) -> int:
     )
     print()
     print(
-        "The worst-seed column is the one to read for the truncating rows: the "
-        "arithmetic right shift floors, so its error is a one-sided bias that "
-        "grows with mean(E0-e_ent). The `+ RNE` row shows what removing that "
-        "bias would buy (proposal P1 in docs/rabit_pcu_spec.md); it is not the "
-        "delivered default."
+        "- **Read the worst-seed column for the truncating rows.** The "
+        "arithmetic right\n  shift floors, so its error is a one-sided bias "
+        "that grows with\n  mean(E0-e_ent)."
     )
-    print()
     print(
-        "These rows hold h = 1 (see _fit_row), which keeps the block exponents "
-        "close together. Trained per-input-channel h spreads them further and "
-        "pushes E0 up, so the truncating rows get worse while the RNE row does "
-        "not: the RTL regression, whose stimulus comes from the packer's fitted "
-        "h, sees 7.6e-4 to 3.8e-3 at MANT_W 12 for exactly this reason."
+        "- **The `+ RNE` row removes only that bias** (proposal P1 in\n"
+        "  docs/rabit_pcu_spec.md). It is not the delivered default."
+    )
+    print(
+        "- **These rows hold h = 1** (see `_fit_row`), which keeps the block "
+        "exponents\n  close together. Trained per-input-channel h spreads them "
+        "and pushes E0 up, so\n  the truncating rows get worse while the RNE "
+        "row does not — that is why the RTL\n  regression, whose stimulus "
+        "comes from the packer's fitted h, sees 7.6e-4 to\n  3.8e-3 at "
+        "MANT_W 12."
     )
     return 0
 

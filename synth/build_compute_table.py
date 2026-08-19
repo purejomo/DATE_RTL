@@ -6,11 +6,11 @@ boundary that contains no register file, no control and no buffers.
 Every row now includes its accumulator, at the same 32-bit width and the same
 four registered stages:
 
-  * The SIMD rows are MAC lanes. Each lane multiplies at 16-bit float and
-    accumulates at binary32 into a register of its own. They used to be
-    combinational multiplier and adder banks with the accumulation left in the
-    GRF, which put them at a different boundary from the PCU rows and gave them
-    zero sequential area; that is no longer the case.
+  * The HBM-PIM baseline is a SIMD row of MAC lanes. Each lane multiplies at
+    16-bit float and accumulates at binary32 into a register of its own. It
+    used to be a combinational multiplier and adder bank with the accumulation
+    left in the GRF, which put it at a different boundary from the PCU rows and
+    gave it zero sequential area; that is no longer the case.
   * The P3-LLM-organized rows are the PCU. Their accumulators sit inside the
     processing elements and cannot be separated from the arithmetic without
     changing the architecture.
@@ -18,8 +18,9 @@ four registered stages:
 The sequential share is still printed for every row, but it now measures a real
 difference in what accumulation costs each organization rather than an artifact
 of where the boundary was drawn. The PCU accumulates in fixed point, so its
-final stage is a carry-propagate add; the SIMD lanes run a full binary32 add,
-with alignment, normalization and rounding, inside the accumulator loop.
+final stage is a carry-propagate add; the baseline SIMD lanes run a full
+binary32 add, with alignment, normalization and rounding, inside the
+accumulator loop.
 """
 
 from __future__ import annotations
@@ -52,42 +53,25 @@ DFF_AREA = {
 # already counted complete lanes; that understated throughput by two.
 #
 # ``adders`` means architectural accumulator lanes, not RTL ``+`` tokens or
-# compressor stages.  SIMD has one accumulator per multiplier.  A P3-LLM PE
-# shares one accumulator across its four multipliers, so the 8-PE and 16-PE
+# compressor stages.  The SIMD baseline has one accumulator per multiplier.  A
+# P3-LLM PE shares one accumulator across its four multipliers, so the 8-PE and 16-PE
 # configurations have 8 and 16 accumulator lanes respectively.
 #
 # The last field is whether the measured boundary contains the accumulator. It
-# is now true for every row; the SIMD rows carry a binary32 accumulator per lane
-# and the PCU rows a signed 32-bit fixed-point accumulator per processing
-# element. Before the SIMD rows gained theirs the column read "no (in GRF)" and
-# the two halves of the table were not comparable.
+# is now true for every row; the SIMD baseline carries a binary32 accumulator
+# per lane and the PCU rows a signed 32-bit fixed-point accumulator per
+# processing element. Before the baseline gained one the column read
+# "no (in GRF)" and the two halves of the table were not comparable.
 ROWS = [
     ("hbm-pim", "FP16",      "SIMD bank",  16,
      "compute_hbmpim_250",       16, 16, 16, 250, True),
 
-    # Iso-operator-count against the baseline: same lane count, same
-    # organization, only the weight operand narrowed. Isolates the cost of the
-    # precision change before any lane scaling is credited to it.
-    ("awq",     "INT4/FP16", "SIMD bank",  16,
-     "int4fp16_compute_16_500",  16, 16, 16, 500, True),
-    ("awq",     "INT4/BF16", "SIMD bank",  16,
-     "int4bf16_compute_16_500",  16, 16, 16, 500, True),
-
-    ("awq",     "INT4/FP16", "SIMD bank",  32,
-     "int4fp16_compute_32_500",  32, 32, 32, 500, True),
-    ("awq",     "INT4/BF16", "SIMD bank",  32,
-     "int4bf16_compute_32_500",  32, 32, 32, 500, True),
-    ("awq",     "INT4/FP16", "P3-LLM PCU",  32,
-     "int4fp16_pcu32_500",       32,  8, 32, 500, True),
+    # AWQ INT4 weights in the P3-LLM organization, at both PE counts. The
+    # 32-multiplier row is the half-width diagnostic; the 64-multiplier row is
+    # operator-count matched to the p3llm and spinquant rows below it, so those
+    # three differ only in precision.
     ("awq",     "INT4/BF16", "P3-LLM PCU",  32,
      "int4bf16_pcu32_500",       32,  8, 32, 500, True),
-
-    ("awq",     "INT4/FP16", "SIMD bank",  64,
-     "int4fp16_compute_64_500",  64, 64, 64, 500, True),
-    ("awq",     "INT4/BF16", "SIMD bank",  64,
-     "int4bf16_compute_64_500",  64, 64, 64, 500, True),
-    ("awq",     "INT4/FP16", "P3-LLM PCU",  64,
-     "int4fp16_pcu_top_pcu500",  64, 16, 64, 500, True),
     ("awq",     "INT4/BF16", "P3-LLM PCU",  64,
      "int4bf16_pcu_top_pcu500",  64, 16, 64, 500, True),
     ("p3llm",   "FP4/FP8",   "P3-LLM PCU",  64,
@@ -124,6 +108,28 @@ ROWS = [
     # rather than a table row.
     ("rabit",   "2-bit RB/FP16", "RaBiT PCU",  128,
      "rabit_pcu_250",             0,  8, 128, 250, True),
+
+    # SpinQuant W4A4. The organization column reads "P3-LLM PCU" because that is
+    # what it is: 16 PEs of four multipliers with one accumulator lane per PE,
+    # the same topology as the awq and p3llm rows above. Keeping the label the
+    # same is the point of the row -- organization held fixed, precision varied,
+    # which is the comparison the table exists to make. Here both operands are
+    # 4-bit integers and nothing
+    # else is left: no format decoder, no exponent alignment, no zero-point
+    # subtract, no scale multiply. The rotations are merged into the weights
+    # offline, the activation zero point is folded into the NPU bias, and both
+    # dequantization scales are applied by the NPU after the drain.
+    #
+    #   mul    = 64  signed4 x unsigned4, one per PE lane
+    #   add    = 16  accumulator lanes, one per PE, matching the other rows
+    #   MAC/cy = 64  one MAC command per cycle at tCCD_S, sustained
+    #
+    # The measured boundary carries more state than the P3-LLM rows do: four
+    # accumulator entries per PE instead of one (the GRF reading this design
+    # targets) plus the 256-bit bank read latch that makes the 2-pump schedule
+    # work. results/designs/spinquant_area_report.md prices both.
+    ("spinquant", "INT4/INT4", "P3-LLM PCU", 64,
+     "spinquant_pcu_500",        64, 16, 64, 500, True),
 ]
 
 
@@ -138,7 +144,12 @@ def sequential_area(stat_path: pathlib.Path) -> float:
 
 
 def power_of(top: str, label: str):
-    """Return power only when its report is at least as new as the netlist."""
+    """Return power only when its report is at least as new as the netlist.
+
+    Vectorless power under `set_power_activity -global 0.20`: the same activity
+    on every net, no propagation. It gives no credit to a design that toggles
+    less, so the column carries an energy comparison only at the ratio level.
+    """
     path = R / "power" / f"{top}_power.rpt"
     if not path.exists():
         return None
@@ -181,7 +192,7 @@ def main() -> None:
             "um2_per_mac": f"{area / mac_cyc:.0f}",
             "um2_per_gmacs": f"{area / gmacs:.0f}",
             "power_w": f"{power:.4f}" if power else "",
-            "pj_per_mac": f"{power / gmacs * 1000:.1f}" if power else "",
+            "pj_per_mac": f"{power / gmacs * 1000:.2f}" if power else "",
             "includes_accumulator": "yes" if has_acc else "no (in GRF)",
             "cells": entry["cells"],
             "dffs": entry["dffs"],
@@ -198,8 +209,8 @@ def main() -> None:
 
     hdr = (f"{'paper':<9}{'precision':<12}{'organization':<13}{'MHz':>5}"
            f"{'mul':>5}{'add':>5}{'MAC/cy':>7}{'GMAC/s':>8}{'COMPUTE':>10}{'comb':>10}"
-           f"{'seq':>9}{'um2/MAC':>9}{'um2/GMACs':>11}{'Power W':>9}"
-           f"{'pJ/MAC':>8}")
+           f"{'seq':>9}{'um2/MAC':>9}{'um2/GMACs':>11}"
+           f"{'W':>9}{'pJ/MAC':>9}")
     print(hdr); print("-" * len(hdr))
     for r in rows:
         print(f"{r['paper']:<9}{r['precision']:<12}{r['organization']:<13}"
@@ -208,7 +219,12 @@ def main() -> None:
               f"{r['gmac_per_s']:>8}"
               f"{r['compute_area_um2']:>10}{r['combinational_um2']:>10}"
               f"{r['sequential_um2']:>9}{r['um2_per_mac']:>9}"
-              f"{r['um2_per_gmacs']:>11}{r['power_w']:>9}{r['pj_per_mac']:>8}")
+              f"{r['um2_per_gmacs']:>11}"
+              f"{r['power_w']:>9}{r['pj_per_mac']:>9}")
+    print()
+    print("W / pJ/MAC : vectorless, set_power_activity -global 0.20, uniform")
+    print("on every net. Energy is compared at the ratio level only -- a")
+    print("stronger claim needs a gate-level VCD, which this flow lacks.")
 
 
 if __name__ == "__main__":

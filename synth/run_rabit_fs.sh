@@ -19,7 +19,7 @@
 # and are what says whether the h multiply on the write path still closes at
 # tCCD_S = 2 ns per PCU cycle.
 #
-# The source set deliberately reuses rtl/5_rabit rather than copying it. Do not
+# The source set deliberately reuses rtl/4_rabit rather than copying it. Do not
 # add rabit_pcu_top.sv / rabit_pcu_synth.sv here: those are the base variant's
 # own tops and sv2v --top would prune them anyway, but listing them would
 # suggest the two variants share a top, which they do not.
@@ -27,8 +27,8 @@ set -euo pipefail
 
 HERE="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
-BASE_RTL="${ROOT}/rtl/5_rabit"
-FS_RTL="${ROOT}/rtl/5_rabit_fullsacle"
+BASE_RTL="${ROOT}/rtl/4_rabit"
+FS_RTL="${ROOT}/rtl/4_rabit_fullscale"
 OUT="${ROOT}/build"
 RESULTS="${ROOT}/results"
 

@@ -1,7 +1,7 @@
 # RaBiT full-scale PCU: what the FP8 h format costs
 
-Four quantities, all measured against an exact rational reference so
-that no host floating point enters the comparison:
+Four quantities, all measured against an exact rational reference, so no host
+floating point enters the comparison:
 
 | name | what it isolates |
 |---|---|
@@ -10,11 +10,11 @@ that no host floating point enters the comparison:
 | `fs_vs_fp16_ref` | the two together: PCU-FS against binary16 h |
 | `base_vs_fp16_ref` | the base variant, whose h stays binary16 on the NPU |
 
-`fs_vs_fp8_ref` is the honest measure of the hardware; the other rows
-are the cost of the format decision the write budget forced. The L2
-column is the metric to read: a per-output relative error is dominated
-by outputs that land near zero through cancellation, which is why the
-max column is large and uninformative.
+- `fs_vs_fp8_ref` is the honest measure of the hardware; the other rows are the
+  cost of the format decision the write budget forced.
+- **Read the L2 column.** A per-output relative error is dominated by outputs
+  that land near zero through cancellation, which is why the max column is
+  large and uninformative.
 
 | shape | seed | quantity | max rel err | mean rel err | L2 rel err |
 |---|---:|---|---:|---:|---:|

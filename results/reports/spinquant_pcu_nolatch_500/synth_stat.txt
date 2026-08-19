@@ -1,0 +1,76 @@
+
+19. Printing statistics.
+
+=== spinquant_pcu_nolatch ===
+
+   Number of wires:              26099
+   Number of wire bits:          26882
+   Number of public wires:        1713
+   Number of public wire bits:    2496
+   Number of ports:                 13
+   Number of port bits:            796
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              24896
+     AND2_X1                       108
+     AND2_X2                         8
+     AND2_X4                         1
+     AND3_X1                        25
+     AOI21_X1                     1553
+     AOI21_X2                      232
+     AOI21_X4                       21
+     AOI22_X1                       74
+     AOI22_X2                        1
+     BUF_X1                        729
+     BUF_X16                        42
+     BUF_X2                        103
+     BUF_X32                        10
+     BUF_X4                        156
+     BUF_X8                         68
+     CLKBUF_X1                     255
+     CLKBUF_X2                       6
+     CLKBUF_X3                       3
+     DFF_X1                       1704
+     INV_X1                       3384
+     INV_X2                        151
+     INV_X32                         1
+     INV_X4                         11
+     INV_X8                          1
+     MUX2_X1                         7
+     NAND2_X1                     5791
+     NAND2_X2                      728
+     NAND2_X4                      154
+     NAND3_X1                     1411
+     NAND3_X2                      167
+     NAND3_X4                       14
+     NAND4_X1                       29
+     NOR2_X1                      1847
+     NOR2_X2                       215
+     NOR2_X4                        80
+     NOR3_X1                        53
+     NOR3_X2                         3
+     NOR4_X1                         3
+     NOR4_X2                        11
+     NOR4_X4                         2
+     OAI211_X2                       1
+     OAI21_X1                     3053
+     OAI21_X2                      173
+     OAI21_X4                        8
+     OAI221_X1                      64
+     OAI22_X1                      712
+     OAI22_X2                        2
+     OR2_X1                        476
+     OR2_X2                         70
+     OR2_X4                         22
+     OR3_X1                          8
+     OR3_X2                          4
+     OR3_X4                          1
+     XNOR2_X1                      897
+     XNOR2_X2                      104
+     XOR2_X1                       100
+     XOR2_X2                        39
+
+   Chip area for module '\spinquant_pcu_nolatch': 31123.064000
+     of which used for sequential elements: 7705.488000 (24.76%)
+

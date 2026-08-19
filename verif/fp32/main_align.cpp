@@ -2,9 +2,9 @@
 //
 //   1. int4float_align now rounds to nearest even on the alignment shift
 //      instead of truncating. That changes the result for every input, not just
-//      exceptional ones, so it is checked exhaustively: all 65536 encodings of
-//      both activation formats against every reference exponent that produces a
-//      distinct shift, plus the out-of-range ones on either side.
+//      exceptional ones, so it is checked exhaustively: all 65536 bfloat16
+//      encodings against every reference exponent that produces a distinct
+//      shift, plus the out-of-range ones on either side.
 //
 //   2. int4float_pe now saturates its 32-bit accumulator instead of wrapping.
 //      Driven here with the largest products the datapath can produce, from
@@ -73,24 +73,15 @@ int main(int argc, char **argv) {
     // ---- 1. aligner, exhaustive -------------------------------------------
     // Shifts beyond ALIGN_W flush and shifts below zero saturate, so a sweep
     // that brackets both ends covers every distinct behaviour.
-    long checked = 0, fail_fp16 = 0, fail_bf16 = 0;
+    long checked = 0, fail_bf16 = 0;
     for (int ref_exp = -40; ref_exp <= 40; ref_exp++) {
         for (uint32_t v = 0; v < 65536u; v++) {
             dut->i_float = (uint16_t)v;
             dut->i_ref_exp = (int16_t)ref_exp;
             dut->eval();
             bool sat, inv;
-            int32_t want = ref_align((uint16_t)v, ref_exp, 5, 10, 8, &sat, &inv);
-            int32_t got = sext((uint32_t)dut->o_aligned_fp16, 20);
-            if (got != want || (bool)dut->o_saturate_fp16 != sat ||
-                (bool)dut->o_invalid_fp16 != inv) {
-                if (fail_fp16 < 5)
-                    printf("  fp16 align MISMATCH f=0x%04x ref=%d got=%d want=%d\n",
-                           v, ref_exp, got, want);
-                fail_fp16++;
-            }
-            want = ref_align((uint16_t)v, ref_exp, 8, 7, 8, &sat, &inv);
-            got = sext((uint32_t)dut->o_aligned_bf16, 17);
+            int32_t want = ref_align((uint16_t)v, ref_exp, 8, 7, 8, &sat, &inv);
+            int32_t got = sext((uint32_t)dut->o_aligned_bf16, 17);
             if (got != want || (bool)dut->o_saturate_bf16 != sat ||
                 (bool)dut->o_invalid_bf16 != inv) {
                 if (fail_bf16 < 5)
@@ -101,11 +92,9 @@ int main(int argc, char **argv) {
             checked++;
         }
     }
-    printf("int4float_align fp16 exhaustive (%ld): %s (%ld fail)\n",
-           checked, fail_fp16 ? "FAIL" : "PASS", fail_fp16);
     printf("int4float_align bf16 exhaustive (%ld): %s (%ld fail)\n",
            checked, fail_bf16 ? "FAIL" : "PASS", fail_bf16);
-    fails += fail_fp16 + fail_bf16;
+    fails += fail_bf16;
 
     // ---- 2. accumulator saturation ----------------------------------------
     // Weight 15 against the largest aligned magnitude gives the largest product

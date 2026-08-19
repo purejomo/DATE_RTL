@@ -8,8 +8,13 @@ floating point is involved anywhere.
 
 Alignment is lossy by construction -- that is what block floating point is --
 so this model defines the architecture's numerics rather than approximating an
-IEEE result. It mirrors `rtl/int4float_align.v` and `rtl/int4float_pe.v`
+IEEE result. It mirrors `int4float_align.v` and `int4float_pe.v`
 statement for statement.
+
+The zero point is per output PE: AutoAWQ stores one zero point per output
+channel and group, so `transaction` takes either one nibble (the v1 broadcast
+contract still used by the 16-PE build) or one nibble per PE (the v2 contract
+of rtl/2_awq_p3llm_8pe_v2).
 """
 
 from __future__ import annotations
@@ -132,7 +137,7 @@ class PcuModel:
         self,
         activations: list[int],
         weights: list[list[int]],
-        zero_point: int,
+        zero_point: int | list[int],
         ref_exp: int,
         *,
         acc_clear: bool,
@@ -142,6 +147,13 @@ class PcuModel:
             raise ValueError(f"expected {LANES} activations")
         if len(weights) != self.num_pes:
             raise ValueError(f"expected {self.num_pes} weight groups")
+
+        # One nibble broadcasts to every PE (v1); a list gives each PE its own
+        # zero point (v2). Both spellings decode identically per PE.
+        zero_points = ([zero_point] * self.num_pes
+                       if isinstance(zero_point, int) else list(zero_point))
+        if len(zero_points) != self.num_pes:
+            raise ValueError(f"expected {self.num_pes} zero points")
 
         aligned = []
         saturated = False
@@ -154,7 +166,7 @@ class PcuModel:
 
         for pe in range(self.num_pes):
             partial = sum(
-                aligned[lane] * decode_weight(weights[pe][lane], zero_point)
+                aligned[lane] * decode_weight(weights[pe][lane], zero_points[pe])
                 for lane in range(LANES)
             )
             if acc_clear:

@@ -1,7 +1,7 @@
 # cocotb + Verilator regression for every arithmetic block in the paper.
 #
 #   make                       run the whole regression
-#   make TEST=int4bf16_mul     run one test
+#   make TEST=pcu_bf16_64      run one test
 #   make list                  show the test names
 #   make distclean             remove build artefacts
 #
@@ -12,14 +12,18 @@
 RTL   := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../rtl)
 VERIF := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-# 논문 5개 행을 모두 덮는다: baseline lane, awq lane, awq PCU, p3llm PCU, rabit PCU.
-TESTS := fp16_mul int4fp16_mul int4bf16_mul \
-         pcu_fp16_32 pcu_bf16_32 pcu_fp16_64 pcu_bf16_64 \
+# 논문 5개 행을 모두 덮는다: baseline lane, awq PCU, p3llm PCU, rabit PCU,
+# spinquant PCU.
+TESTS := fp16_mul \
+         pcu_bf16_32 pcu_fp16_32 pcu_bf16_64 \
          p3llm_decoders p3llm_compressor p3llm_pe p3llm_pcu \
          rabit_cvt rabit_align rabit_pe rabit_acc \
          rabit_pcu rabit_pcu_m10 rabit_pcu_noshift rabit_pcu_m10_noshift \
          rabit_fs rabit_fs_pipe rabit_fs_h16 \
-         p3llm_dequant_arith p3llm_dequant
+         p3llm_dequant_arith p3llm_dequant \
+         spinquant_pe spinquant_acc \
+         spinquant_pcu spinquant_pcu_nolatch spinquant_pcu_acc32 \
+         spinquant_pcu_r2e2 spinquant_pcu_r2 spinquant_pcu_r4 spinquant_pcu_w512
 
 .PHONY: all list distclean
 # cocotb's simulator wrapper exits 0 even when a testcase fails -- it reports the
@@ -49,9 +53,9 @@ TEST ?= fp16_mul
 
 # --- lane-level tests: one multiplier, no clock ----------------------------
 #
-# The 16-bit adder lanes are gone. Each SIMD design now keeps its binary32
-# accumulation adder locally; verif/fp32 checks both copies against the host's
-# IEEE-754 arithmetic rather than duplicating that model in cocotb.
+# The 16-bit adder lanes are gone. The SIMD baseline keeps its binary32
+# accumulation adder locally; verif/fp32 checks it against the host's IEEE-754
+# arithmetic rather than duplicating that model in cocotb.
 
 ifeq ($(TEST),fp16_mul)
 COCOTB_TOPLEVEL := hbmpim_fp16_mul
@@ -59,38 +63,36 @@ MODULE          := test_fp16_mul_lane
 VERILOG_SOURCES := $(RTL)/1_hbmpim/hbmpim_fp16_mul.v
 endif
 
-ifeq ($(TEST),int4bf16_mul)
-COCOTB_TOPLEVEL := awq_int4bf16_mul
-MODULE          := test_int4bf16_mul_lane
-VERILOG_SOURCES := $(RTL)/2_awq_hbmpim/awq_int4bf16_mul.v
-endif
-
-ifeq ($(TEST),int4fp16_mul)
-COCOTB_TOPLEVEL := awq_int4fp16_mul
-MODULE          := test_int4fp16_mul_lane
-VERILOG_SOURCES := $(RTL)/2_awq_hbmpim/awq_int4fp16_mul.v
-endif
-
 # --- PCU tests: full tile through the four-stage pipeline ------------------
 #
-# 8-PE 빌드와 16-PE 빌드는 rtl/3_awq_p3llm_8pe, rtl/3_awq_p3llm_16pe 로 나뉘어
+# 8-PE 빌드와 16-PE 빌드는 rtl/2_awq_p3llm_8pe_v2, rtl/2_awq_p3llm_16pe 로 나뉘어
 # 있고 각자 int4float_pcu/pe/align 사본을 들고 있다. 따라서 한 번에 한쪽
 # 디렉토리만 컴파일한다. 두 벌을 함께 넣으면 세 모듈이 중복 정의된다.
+#
+# 두 빌드는 zero-point 계약이 다르다. 8-PE 는 v2 라서 `i_weight_zp` 이 PE 당
+# 4-bit (NUM_PES*4 = 32 bit) 이고, 16-PE 는 여전히 v1 broadcast nibble (4 bit)
+# 이다. testbench 는 PCU_ZP_PER_PE 로 어느 쪽인지 받아 stimulus 와 golden
+# model 을 함께 맞춘다.
 
-ifneq ($(filter $(TEST),pcu_fp16_32 pcu_bf16_32 pcu_fp16_64 pcu_bf16_64),)
+PCU8_DIR  := $(RTL)/2_awq_p3llm_8pe_v2
+PCU16_DIR := $(RTL)/2_awq_p3llm_16pe
+
+ifneq ($(filter $(TEST),pcu_bf16_32 pcu_bf16_64 pcu_fp16_32),)
 MODULE          := test_int4float_pcu
-PCU_FORMAT      := $(if $(findstring bf16,$(TEST)),bf16,fp16)
-PCU_NUM_PES     := $(if $(findstring _32,$(TEST)),8,16)
-PCU_SUFFIX      := $(if $(findstring _32,$(TEST)),pcu32,pcu_top)
-PCU_DIR         := $(RTL)/3_awq_p3llm_$(PCU_NUM_PES)pe
-COCOTB_TOPLEVEL := int4$(PCU_FORMAT)_$(PCU_SUFFIX)
+PCU_IS_8PE      := $(findstring _32,$(TEST))
+PCU_NUM_PES     := $(if $(PCU_IS_8PE),8,16)
+PCU_ZP_PER_PE   := $(if $(PCU_IS_8PE),1,0)
+PCU_DIR         := $(if $(PCU_IS_8PE),$(PCU8_DIR),$(PCU16_DIR))
+PCU_FMT         := $(if $(findstring fp16,$(TEST)),fp16,bf16)
+PCU_SUFFIX      := $(if $(PCU_IS_8PE),pcu32,pcu_top)
+COCOTB_TOPLEVEL := int4$(PCU_FMT)_$(PCU_SUFFIX)
 VERILOG_SOURCES := $(PCU_DIR)/compressor_4to2.sv \
                    $(PCU_DIR)/int4_asym_decode.v \
                    $(PCU_DIR)/int4float_align.v \
                    $(PCU_DIR)/int4float_pe.v \
                    $(PCU_DIR)/int4float_pcu.v \
                    $(PCU_DIR)/$(COCOTB_TOPLEVEL).v
-export PCU_FORMAT PCU_NUM_PES
+export PCU_NUM_PES PCU_ZP_PER_PE PCU_FMT
 endif
 
 # --- P3-LLM: decoders, compressor, PE, and the whole PCU ------------------
@@ -99,23 +101,23 @@ endif
 # violation inside the pipeline fails the run even when the output happens to
 # match.
 
-P3LLM_RTL := $(RTL)/4_p3llm/p3llm_pkg.sv \
-             $(RTL)/4_p3llm/fp8_e4m3_decoder.sv \
-             $(RTL)/4_p3llm/fp8_s0e4m4_decoder.sv \
-             $(RTL)/4_p3llm/bitmod4_decoder.sv \
-             $(RTL)/4_p3llm/int4_asym_decoder.sv \
-             $(RTL)/4_p3llm/fixed_mul_shift.sv \
-             $(RTL)/4_p3llm/compressor_4to2.sv \
-             $(RTL)/4_p3llm/p3llm_pe.sv
+P3LLM_RTL := $(RTL)/3_p3llm/p3llm_pkg.sv \
+             $(RTL)/3_p3llm/fp8_e4m3_decoder.sv \
+             $(RTL)/3_p3llm/fp8_s0e4m4_decoder.sv \
+             $(RTL)/3_p3llm/bitmod4_decoder.sv \
+             $(RTL)/3_p3llm/int4_asym_decoder.sv \
+             $(RTL)/3_p3llm/fixed_mul_shift.sv \
+             $(RTL)/3_p3llm/compressor_4to2.sv \
+             $(RTL)/3_p3llm/p3llm_pe.sv
 
 ifeq ($(TEST),p3llm_decoders)
 COCOTB_TOPLEVEL := decoder_tb
 MODULE          := test_p3llm_decoders
 TESTCASE        := test_all_decoders
-VERILOG_SOURCES := $(RTL)/4_p3llm/fp8_e4m3_decoder.sv \
-                   $(RTL)/4_p3llm/fp8_s0e4m4_decoder.sv \
-                   $(RTL)/4_p3llm/bitmod4_decoder.sv \
-                   $(RTL)/4_p3llm/int4_asym_decoder.sv \
+VERILOG_SOURCES := $(RTL)/3_p3llm/fp8_e4m3_decoder.sv \
+                   $(RTL)/3_p3llm/fp8_s0e4m4_decoder.sv \
+                   $(RTL)/3_p3llm/bitmod4_decoder.sv \
+                   $(RTL)/3_p3llm/int4_asym_decoder.sv \
                    $(VERIF)/tests/harness/decoder_tb.sv
 endif
 
@@ -123,7 +125,7 @@ ifeq ($(TEST),p3llm_compressor)
 COCOTB_TOPLEVEL := compressor_tb
 MODULE          := test_p3llm_pe
 TESTCASE        := test_compressor
-VERILOG_SOURCES := $(RTL)/4_p3llm/compressor_4to2.sv \
+VERILOG_SOURCES := $(RTL)/3_p3llm/compressor_4to2.sv \
                    $(VERIF)/tests/harness/compressor_tb.sv
 endif
 
@@ -139,11 +141,11 @@ ifeq ($(TEST),p3llm_pcu)
 COCOTB_TOPLEVEL := p3llm_pcu
 MODULE          := test_p3llm_pcu
 TESTCASE        := test_pcu_regression
-VERILOG_SOURCES := $(P3LLM_RTL) $(RTL)/4_p3llm/p3llm_pcu.sv
+VERILOG_SOURCES := $(P3LLM_RTL) $(RTL)/3_p3llm/p3llm_pcu.sv
 EXTRA_ARGS      += --assert -DP3LLM_ASSERTIONS
 endif
 
-P3LLM_DEQUANT_DIR := $(RTL)/4_p3llm_with_dequant
+P3LLM_DEQUANT_DIR := $(RTL)/3_p3llm_with_dequant
 P3LLM_DEQUANT_RTL := $(P3LLM_DEQUANT_DIR)/p3llm_pkg.sv \
                      $(P3LLM_DEQUANT_DIR)/fp8_e4m3_decoder.sv \
                      $(P3LLM_DEQUANT_DIR)/fp8_s0e4m4_decoder.sv \
@@ -182,41 +184,41 @@ endif
 # 입력 GRF / CRF / bank / NPU 는 합성 범위 밖이라 testbench 의 behavioral model
 # 로만 존재하고, stimulus 는 tools/pack_rabit.py 가 만든 실제 word stream 이다.
 
-RABIT_RTL := $(RTL)/5_rabit/rabit_compressor_4to2.sv \
-             $(RTL)/5_rabit/rabit_cvt_fp16_blk.sv \
-             $(RTL)/5_rabit/rabit_align_shift.sv \
-             $(RTL)/5_rabit/rabit_pe.sv \
-             $(RTL)/5_rabit/rabit_acc_regfile.sv \
-             $(RTL)/5_rabit/rabit_pcu_ctrl.sv \
-             $(RTL)/5_rabit/rabit_pcu_top.sv
+RABIT_RTL := $(RTL)/4_rabit/rabit_compressor_4to2.sv \
+             $(RTL)/4_rabit/rabit_cvt_fp16_blk.sv \
+             $(RTL)/4_rabit/rabit_align_shift.sv \
+             $(RTL)/4_rabit/rabit_pe.sv \
+             $(RTL)/4_rabit/rabit_acc_regfile.sv \
+             $(RTL)/4_rabit/rabit_pcu_ctrl.sv \
+             $(RTL)/4_rabit/rabit_pcu_top.sv
 
 ifeq ($(TEST),rabit_cvt)
 COCOTB_TOPLEVEL := rabit_cvt_tb
 MODULE          := test_rabit_cvt
-VERILOG_SOURCES := $(RTL)/5_rabit/rabit_cvt_fp16_blk.sv \
+VERILOG_SOURCES := $(RTL)/4_rabit/rabit_cvt_fp16_blk.sv \
                    $(VERIF)/tests/harness/rabit_cvt_tb.sv
 endif
 
 ifeq ($(TEST),rabit_align)
 COCOTB_TOPLEVEL := rabit_align_tb
 MODULE          := test_rabit_align
-VERILOG_SOURCES := $(RTL)/5_rabit/rabit_align_shift.sv \
+VERILOG_SOURCES := $(RTL)/4_rabit/rabit_align_shift.sv \
                    $(VERIF)/tests/harness/rabit_align_tb.sv
 endif
 
 ifeq ($(TEST),rabit_pe)
 COCOTB_TOPLEVEL := rabit_pe
 MODULE          := test_rabit_pe
-VERILOG_SOURCES := $(RTL)/5_rabit/rabit_compressor_4to2.sv \
-                   $(RTL)/5_rabit/rabit_align_shift.sv \
-                   $(RTL)/5_rabit/rabit_pe.sv
+VERILOG_SOURCES := $(RTL)/4_rabit/rabit_compressor_4to2.sv \
+                   $(RTL)/4_rabit/rabit_align_shift.sv \
+                   $(RTL)/4_rabit/rabit_pe.sv
 EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS
 endif
 
 ifeq ($(TEST),rabit_acc)
 COCOTB_TOPLEVEL := rabit_acc_regfile
 MODULE          := test_rabit_acc
-VERILOG_SOURCES := $(RTL)/5_rabit/rabit_acc_regfile.sv
+VERILOG_SOURCES := $(RTL)/4_rabit/rabit_acc_regfile.sv
 endif
 
 ifneq ($(filter $(TEST),rabit_pcu rabit_pcu_m10 rabit_pcu_noshift rabit_pcu_m10_noshift),)
@@ -224,37 +226,37 @@ MODULE            := test_rabit_pcu
 COCOTB_TOPLEVEL   := $(TEST)
 RABIT_MANT_W      := $(if $(findstring m10,$(TEST)),10,12)
 RABIT_SHIFTER_EN  := $(if $(findstring noshift,$(TEST)),0,1)
-VERILOG_SOURCES   := $(RABIT_RTL) $(RTL)/5_rabit/rabit_pcu_synth.sv
+VERILOG_SOURCES   := $(RABIT_RTL) $(RTL)/4_rabit/rabit_pcu_synth.sv
 EXTRA_ARGS        += --assert -DRABIT_ASSERTIONS
 export RABIT_MANT_W RABIT_SHIFTER_EN
 endif
 
 # --- RaBiT full-scale PCU -------------------------------------------------
 #
-# rtl/5_rabit holds the base variant and rtl/5_rabit_fullsacle the full-scale
+# rtl/4_rabit holds the base variant and rtl/4_rabit_fullscale the full-scale
 # one. The full-scale top reuses the base modules rather than copying them, so
 # both directories are compiled together and sv2v/Verilator see one definition
 # of each shared module. rabit_fs_h16 is the same design with H_FMT = FP16_3WR,
 # which changes the write schedule -- the testbench's stimulus generator picks
 # it up from RABIT_FS_H_FMT.
 
-RABIT_BASE_RTL := $(RTL)/5_rabit/rabit_compressor_4to2.sv \
-                  $(RTL)/5_rabit/rabit_align_shift.sv \
-                  $(RTL)/5_rabit/rabit_pe.sv \
-                  $(RTL)/5_rabit/rabit_cvt_fp16_blk.sv \
-                  $(RTL)/5_rabit/rabit_acc_regfile.sv \
-                  $(RTL)/5_rabit/rabit_pcu_ctrl.sv
+RABIT_BASE_RTL := $(RTL)/4_rabit/rabit_compressor_4to2.sv \
+                  $(RTL)/4_rabit/rabit_align_shift.sv \
+                  $(RTL)/4_rabit/rabit_pe.sv \
+                  $(RTL)/4_rabit/rabit_cvt_fp16_blk.sv \
+                  $(RTL)/4_rabit/rabit_acc_regfile.sv \
+                  $(RTL)/4_rabit/rabit_pcu_ctrl.sv
 
 RABIT_FS_RTL := $(RABIT_BASE_RTL) \
-                $(RTL)/5_rabit_fullsacle/rabit_fs_fp16_pack.sv \
-                $(RTL)/5_rabit_fullsacle/rabit_fs_h_scale_unit.sv \
-                $(RTL)/5_rabit_fullsacle/rabit_fs_g_buffer.sv \
-                $(RTL)/5_rabit_fullsacle/rabit_fs_dq_lane.sv \
-                $(RTL)/5_rabit_fullsacle/rabit_fs_dq_add.sv \
-                $(RTL)/5_rabit_fullsacle/rabit_fs_dq_unit.sv \
-                $(RTL)/5_rabit_fullsacle/rabit_fs_drain_seq.sv \
-                $(RTL)/5_rabit_fullsacle/rabit_pcu_fs_top.sv \
-                $(RTL)/5_rabit_fullsacle/rabit_pcu_fs_synth.sv
+                $(RTL)/4_rabit_fullscale/rabit_fs_fp16_pack.sv \
+                $(RTL)/4_rabit_fullscale/rabit_fs_h_scale_unit.sv \
+                $(RTL)/4_rabit_fullscale/rabit_fs_g_buffer.sv \
+                $(RTL)/4_rabit_fullscale/rabit_fs_dq_lane.sv \
+                $(RTL)/4_rabit_fullscale/rabit_fs_dq_add.sv \
+                $(RTL)/4_rabit_fullscale/rabit_fs_dq_unit.sv \
+                $(RTL)/4_rabit_fullscale/rabit_fs_drain_seq.sv \
+                $(RTL)/4_rabit_fullscale/rabit_pcu_fs_top.sv \
+                $(RTL)/4_rabit_fullscale/rabit_pcu_fs_synth.sv
 
 ifeq ($(TEST),rabit_fs)
 COCOTB_TOPLEVEL := rabit_pcu_fs
@@ -281,6 +283,58 @@ VERILOG_SOURCES := $(RABIT_FS_RTL)
 EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS -DRABIT_FS_ASSERTIONS
 RABIT_FS_H_FMT  := 1
 export RABIT_FS_H_FMT
+endif
+
+# --- SpinQuant W4A4: PE, accumulator file, whole PCU -----------------------
+#
+# 입력 GRF / CRF / bank / NPU 는 합성 범위 밖이라 testbench 의 behavioral model
+# 로만 존재한다. testbench 가 [16 x K] weight tile 을 256b beat stream 으로 잘라
+# microkernel 이 낼 command 순서를 그대로 재현하고, golden model 은 순수 정수
+# GEMV 다 (verif/models/spinquant_model.py).
+#
+# 세 PCU 행은 같은 top 을 파라미터만 바꿔 감싼다. nolatch 는 256b bank read
+# latch 를 경계 밖으로 빼고 (P3-LLM / SIMD 행이 weight 를 받는 방식), acc32 는
+# carry chain 을 register 폭과 같은 32b 로 되돌린다. testbench 는 두 knob 을
+# 환경변수로 받아 command 스케줄과 golden model 을 함께 맞춘다.
+
+SPINQUANT_RTL := $(RTL)/5_spinquant/spinquant_compressor_4to2.sv \
+                 $(RTL)/5_spinquant/spinquant_mul_s4u4.sv \
+                 $(RTL)/5_spinquant/spinquant_pe.sv \
+                 $(RTL)/5_spinquant/spinquant_acc_regfile.sv \
+                 $(RTL)/5_spinquant/spinquant_pcu_top.sv
+
+ifeq ($(TEST),spinquant_pe)
+COCOTB_TOPLEVEL := spinquant_pe
+MODULE          := test_spinquant_pe
+VERILOG_SOURCES := $(RTL)/5_spinquant/spinquant_compressor_4to2.sv \
+                   $(RTL)/5_spinquant/spinquant_mul_s4u4.sv \
+                   $(RTL)/5_spinquant/spinquant_pe.sv
+EXTRA_ARGS      += --assert -DSPINQUANT_ASSERTIONS
+endif
+
+ifeq ($(TEST),spinquant_acc)
+COCOTB_TOPLEVEL := spinquant_acc_regfile
+MODULE          := test_spinquant_acc
+VERILOG_SOURCES := $(RTL)/5_spinquant/spinquant_acc_regfile.sv
+endif
+
+SPINQUANT_PCU_TESTS := spinquant_pcu spinquant_pcu_nolatch spinquant_pcu_acc32 \
+                       spinquant_pcu_r2 spinquant_pcu_r2e2 spinquant_pcu_r4 \
+                       spinquant_pcu_w512
+
+ifneq ($(filter $(TEST),$(SPINQUANT_PCU_TESTS)),)
+MODULE                := test_spinquant_pcu
+COCOTB_TOPLEVEL       := $(TEST)
+SPINQUANT_W_LATCH     := $(if $(findstring nolatch,$(TEST)),0,1)
+SPINQUANT_ACC_CHAIN_W := $(if $(findstring acc32,$(TEST)),32,24)
+SPINQUANT_NPE         := $(if $(findstring w512,$(TEST)),32,16)
+SPINQUANT_NROW        := $(if $(findstring _r2,$(TEST)),2,$(if $(findstring _r4,$(TEST)),4,1))
+SPINQUANT_NENTRY      := $(if $(findstring r2e2,$(TEST)),2,4)
+VERILOG_SOURCES       := $(SPINQUANT_RTL) \
+                         $(RTL)/5_spinquant/spinquant_pcu_synth.sv
+EXTRA_ARGS            += --assert -DSPINQUANT_ASSERTIONS
+export SPINQUANT_W_LATCH SPINQUANT_ACC_CHAIN_W
+export SPINQUANT_NPE SPINQUANT_NROW SPINQUANT_NENTRY
 endif
 
 ifndef COCOTB_TOPLEVEL

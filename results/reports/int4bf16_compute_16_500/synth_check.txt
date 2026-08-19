@@ -1,4 +1,0 @@
-
-18. Executing CHECK pass (checking for obvious problems).
-Checking module awq_int4bf16_pcu_16_lane...
-Found and reported 0 problems.

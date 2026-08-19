@@ -4,7 +4,7 @@ Bank-attached PIM 연산기. RaBiT 2-bit residual binarization 정밀도의
 **projection layer GEMV 전용** 데이터패스이며, HBM-PIM (ISCA'21) 스타일
 16-lane FP16 SIMD 연산부를 baseline 으로 삼는다.
 
-- RTL: [rtl/5_rabit/](../rtl/5_rabit/)
+- RTL: [rtl/4_rabit/](../rtl/4_rabit/)
 - Packer: [tools/pack_rabit.py](../tools/pack_rabit.py)
 - Golden model: [verif/models/rabit_model.py](../verif/models/rabit_model.py)
 - 회귀: `cd verif && make TEST=rabit_pcu` (전체는 `make`)
@@ -540,8 +540,9 @@ PCU 오차의 산포(7.6e-4 ~ 3.8e-3)는 정밀도가 아니라 **정렬 우 shi
 primary input 에서 시작하는 조합 경로가 된다는 점이다. 두 가지 결과가 있다.
 
 - vectorless 전력 추정이 그 논리 전체를 가정 활성도 0.20 으로 때린다.
-  rabit 행 전력의 98.2 % 가 조합 논리로 잡히는 이유이고, p3llm (stage 0 에서
-  피연산자 등록) 과 전력을 나란히 놓을 수 없는 이유다.
+  rabit 행 전력의 70.7 % 가 조합 논리로 잡히는 이유이고 (p3llm 은 stage 0 에서
+  피연산자를 등록한다), 활성도를 전파시키는 추정 모델을 쓰면 이 구조가 특히
+  불리하게 잡힌다.
 - 실제 실리콘에서도 bank/GRF 쪽 glitch 가 compressor tree 로 그대로 전파된다.
 
 입력을 등록하면 ~4,000 um2 가 늘어 49,000 um2 정도가 되는데 여전히 baseline

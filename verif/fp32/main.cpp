@@ -1,6 +1,6 @@
-// Golden-model check for the directory-local binary32 adders.
+// Golden-model check for the binary32 accumulation adder.
 //
-// Both adders use the same reduced contract: normal finite inputs use RNE,
+// The adder uses a reduced contract: normal finite inputs use RNE,
 // exponent-zero inputs are DAZ, subnormal outputs are FTZ, and NaN/infinity
 // inputs are outside the supported domain.
 #include "Vtb_top.h"
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
         0x4b800000u, 0xcb800000u,             // 2^24
         0x00000002u, 0x00000003u,
     };
-    long hbmpim_corner_fail = 0, awq_corner_fail = 0;
+    long hbmpim_corner_fail = 0;
     long supported_corner_n = 0;
     for (uint32_t a : corners) {
         for (uint32_t b : corners) {
@@ -55,7 +55,6 @@ int main(int argc, char** argv) {
             dut->eval();
             uint32_t want = add_ftz(a, b);
             uint32_t got_hbmpim = dut->o_sum_hbmpim;
-            uint32_t got_awq = dut->o_sum_awq;
             supported_corner_n++;
             if (got_hbmpim != want) {
                 if (hbmpim_corner_fail < 8)
@@ -64,26 +63,16 @@ int main(int argc, char** argv) {
                            a, b, got_hbmpim, want);
                 hbmpim_corner_fail++;
             }
-            if (got_awq != want) {
-                if (awq_corner_fail < 8)
-                    printf("  awq DAZ/FTZ add MISMATCH a=0x%08x b=0x%08x "
-                           "got=0x%08x want=0x%08x\n",
-                           a, b, got_awq, want);
-                awq_corner_fail++;
-            }
         }
     }
     printf("hbmpim_fp32_add supported corners (%ld): %s (%ld fail)\n",
            supported_corner_n, hbmpim_corner_fail ? "FAIL" : "PASS",
            hbmpim_corner_fail);
-    printf("awq_fp32_add supported corners (%ld): %s (%ld fail)\n",
-           supported_corner_n, awq_corner_fail ? "FAIL" : "PASS",
-           awq_corner_fail);
-    fails += hbmpim_corner_fail + awq_corner_fail;
+    fails += hbmpim_corner_fail;
 
     // ---- adder: random ----------------------------------------------------
     std::mt19937_64 rng(20260811);
-    long hbmpim_rand_fail = 0, awq_rand_fail = 0, supported_rand_n = 0;
+    long hbmpim_rand_fail = 0, supported_rand_n = 0;
     const long RAND_N = 4000000;
     for (long i = 0; i < RAND_N; i++) {
         uint32_t a, b;
@@ -109,7 +98,6 @@ int main(int argc, char** argv) {
         dut->eval();
         uint32_t want = add_ftz(a, b);
         uint32_t got_hbmpim = dut->o_sum_hbmpim;
-        uint32_t got_awq = dut->o_sum_awq;
         supported_rand_n++;
         if (got_hbmpim != want) {
             if (hbmpim_rand_fail < 8)
@@ -118,21 +106,11 @@ int main(int argc, char** argv) {
                        a, b, got_hbmpim, want);
             hbmpim_rand_fail++;
         }
-        if (got_awq != want) {
-            if (awq_rand_fail < 8)
-                printf("  awq DAZ/FTZ add MISMATCH a=0x%08x b=0x%08x "
-                       "got=0x%08x want=0x%08x\n",
-                       a, b, got_awq, want);
-            awq_rand_fail++;
-        }
     }
     printf("hbmpim_fp32_add supported random (%ld): %s (%ld fail)\n",
            supported_rand_n, hbmpim_rand_fail ? "FAIL" : "PASS",
            hbmpim_rand_fail);
-    printf("awq_fp32_add supported random (%ld): %s (%ld fail)\n",
-           supported_rand_n, awq_rand_fail ? "FAIL" : "PASS",
-           awq_rand_fail);
-    fails += hbmpim_rand_fail + awq_rand_fail;
+    fails += hbmpim_rand_fail;
 
     printf("\n%s  total failures = %ld\n", fails ? "=== FAIL ===" : "=== ALL PASS ===", fails);
     delete dut;

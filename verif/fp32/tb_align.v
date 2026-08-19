@@ -1,13 +1,9 @@
 `timescale 1ns/1ps
-// Harness for the block-float aligner in both activation formats, plus one
-// processing element so the saturating accumulator can be driven into overflow.
+// Harness for the block-float aligner, plus one processing element so the
+// saturating accumulator can be driven into overflow.
 module tb_align (
     input  wire [15:0]       i_float,
     input  wire signed [9:0] i_ref_exp,
-
-    output wire signed [19:0] o_aligned_fp16,
-    output wire               o_saturate_fp16,
-    output wire               o_invalid_fp16,
 
     output wire signed [16:0] o_aligned_bf16,
     output wire               o_saturate_bf16,
@@ -27,11 +23,6 @@ module tb_align (
     output wire               o_pe_valid,
     output wire signed [31:0] o_pe_acc
 );
-    int4float_align #(.EXP_W(5), .MANT_W(10), .GUARD(8)) u_fp16 (
-        .i_float(i_float), .i_ref_exp(i_ref_exp),
-        .o_aligned(o_aligned_fp16), .o_saturate(o_saturate_fp16),
-        .o_invalid(o_invalid_fp16));
-
     int4float_align #(.EXP_W(8), .MANT_W(7), .GUARD(8)) u_bf16 (
         .i_float(i_float), .i_ref_exp(i_ref_exp),
         .o_aligned(o_aligned_bf16), .o_saturate(o_saturate_bf16),

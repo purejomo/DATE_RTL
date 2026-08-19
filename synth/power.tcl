@@ -25,14 +25,29 @@ if {[info exists ::env(POWER_VCD)] && $::env(POWER_VCD) ne ""
     puts "activity source: VCD $::env(POWER_VCD)"
 } else {
     # Combinational compute boundaries have no meaningful VCD of their own, so
-    # they are compared under one explicit input activity instead. The rate
-    # matches the AiM flow already in this repository.
-    set input_activity 0.20
-    if {[info exists ::env(POWER_INPUT_ACTIVITY)]} {
-        set input_activity $::env(POWER_INPUT_ACTIVITY)
+    # they are compared under one explicit activity instead. The rate matches
+    # the AiM flow already in this repository.
+    #
+    # `-global` puts that activity on every net with no propagation. The
+    # alternative -- annotating only the primary inputs and letting OpenSTA
+    # propagate -- was measured and dropped: its transition-density model sums
+    # densities at XOR gates and ignores reconvergence, so activity grows with
+    # combinational depth and is reset by a flip-flop, which ranks pipeline
+    # depth as much as energy. Against the P3-LLM paper's reported energy ratio
+    # over HBM-PIM (3.83x) this model lands at 3.44x while the propagating one
+    # gave 18.81x, and the area ratio agrees at the same time (paper 3.69x vs
+    # 3.38x here).
+    #
+    # It still reduces to power roughly proportional to cell count, so it gives
+    # no credit to a design that genuinely toggles less. Cross-design energy is
+    # therefore claimed only at the ratio level; a stronger claim needs a
+    # gate-level VCD, which this flow does not yet produce.
+    set activity 0.20
+    if {[info exists ::env(POWER_ACTIVITY)]} {
+        set activity $::env(POWER_ACTIVITY)
     }
-    set_power_activity -input -activity $input_activity -duty 0.50
-    puts "activity source: vectorless, input activity $input_activity"
+    set_power_activity -global -activity $activity -duty 0.50
+    puts "activity source: vectorless global, activity $activity"
 }
 
 puts "=== report_power $::env(POWER_TOP) ==="

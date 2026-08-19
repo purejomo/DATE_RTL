@@ -32,23 +32,23 @@ AREA_SCALE = 4.545
 ENERGY_SCALE = 2.100
 POWER_SCALE = 1.625
 
-# The final paper table intentionally omits the two 32-multiplier P3-LLM
-# diagnostic rows.  Keep this explicit list so a future addition to
-# build_compute_table.ROWS cannot silently change the requested row set/order.
+# The final paper table intentionally omits the 32-multiplier P3-LLM
+# diagnostic row and the dequantizing P3-LLM variant.  Keep this explicit list
+# so a future addition to build_compute_table.ROWS cannot silently change the
+# requested row set/order.
 FINAL_EXISTING_LABELS = (
     "compute_hbmpim_250",
-    "int4fp16_compute_16_500",
-    "int4bf16_compute_16_500",
-    "int4fp16_compute_32_500",
-    "int4bf16_compute_32_500",
-    "int4fp16_compute_64_500",
-    "int4bf16_compute_64_500",
-    "int4fp16_pcu_top_pcu500",
+    # AWQ INT4/BF16 in the P3-LLM organization, operator-count matched to the
+    # p3llm and spinquant rows below it.
     "int4bf16_pcu_top_pcu500",
     "p3llm_pcu_500",
     # RaBiT carries mul = 0: the weight is one bit, so there is no multiplier to
     # count. Its MAC/cy is the number of signed products accepted per cycle.
     "rabit_pcu_250",
+    # SpinQuant W4A4: the same 16 PE x 4 way organization as the P3-LLM row
+    # directly above it, with both operands narrowed to 4-bit integers and the
+    # decode/align/scale hardware gone.
+    "spinquant_pcu_500",
 )
 
 CSV_FIELDS = (
@@ -67,8 +67,11 @@ CSV_FIELDS = (
 TOTAL_POWER_RE = re.compile(
     r"^Total\s+\S+\s+\S+\s+\S+\s+(\S+)", re.MULTILINE
 )
+# power.tcl prints this line for every vectorless run. Matching it keeps a
+# report produced under a different activity model out of the table.
 ACTIVITY_RE = re.compile(
-    r"^activity source: vectorless, input activity (\S+)\s*$", re.MULTILINE
+    r"^activity source: vectorless global, activity (\S+)\s*$",
+    re.MULTILINE,
 )
 
 
@@ -112,9 +115,16 @@ def load_area(path: pathlib.Path, required_labels: tuple[str, ...]) -> dict[str,
 
 
 def power_of(
-    power_dir: pathlib.Path, top: str, netlist: pathlib.Path | None = None
+    power_dir: pathlib.Path,
+    top: str,
+    netlist: pathlib.Path | None = None,
 ) -> float | None:
-    """Read vectorless power, or mark it stale after a newer synthesis."""
+    """Read vectorless power, or mark it stale after a newer synthesis.
+
+    Activity is `set_power_activity -global 0.20`: the same rate on every net,
+    no propagation. It gives no credit to a design that toggles less, so the
+    projected energy column is a ratio-level comparison, not an absolute one.
+    """
     if not top:
         raise ValueError(f"{power_dir}: empty synthesis top name")
     path = power_dir / f"{top}_power.rpt"
@@ -130,13 +140,14 @@ def power_of(
     activities = ACTIVITY_RE.findall(report)
     if len(activities) != 1:
         raise ValueError(
-            f"{path}: expected one vectorless activity row, found {len(activities)}"
+            f"{path}: expected one vectorless -global activity row, "
+            f"found {len(activities)}"
         )
     activity = finite_float(
-        activities[0], source=path, field="vectorless input activity"
+        activities[0], source=path, field="vectorless activity"
     )
     if not math.isclose(activity, 0.20, rel_tol=0.0, abs_tol=1e-12):
-        raise ValueError(f"{path}: expected input activity 0.20, got {activity}")
+        raise ValueError(f"{path}: expected activity 0.20, got {activity}")
     power = finite_float(totals[0], source=path, field="total power")
     if power < 0.0:
         raise ValueError(f"{path}: negative total power: {power}")
@@ -191,7 +202,7 @@ def measured_row(
 
 
 def collect() -> list[dict]:
-    """Collect exactly the ten rows requested for the final table."""
+    """Collect exactly the rows requested for the final table."""
     area_path = RESULTS / "area.csv"
     area_rows = load_area(area_path, FINAL_EXISTING_LABELS)
     metadata = existing_metadata()
@@ -234,9 +245,11 @@ def project(row: dict) -> dict[str, str | int]:
     gmac_per_s = mac_per_cycle * row["mhz"] / 1000.0
     area22 = row["area45"] / AREA_SCALE
     power45 = row["power45"]
-    power22 = None if power45 is None else power45 / POWER_SCALE
-    pj_per_mac22 = None if power45 is None \
-        else power45 / gmac_per_s * 1000.0 / ENERGY_SCALE
+    if power45 is None:
+        power22 = pj_per_mac22 = None
+    else:
+        power22 = power45 / POWER_SCALE
+        pj_per_mac22 = power45 / gmac_per_s * 1000.0 / ENERGY_SCALE
 
     return {
         "design": row["design"],
@@ -248,7 +261,7 @@ def project(row: dict) -> dict[str, str | int]:
         "면적µm²": f"{area22:.0f}",
         "µm²/MAC": f"{area22 / mac_per_cycle:.0f}",
         "Power W": "" if power22 is None else f"{power22:.4f}",
-        "pJ/MAC": "" if pj_per_mac22 is None else f"{pj_per_mac22:.1f}",
+        "pJ/MAC": "" if pj_per_mac22 is None else f"{pj_per_mac22:.2f}",
     }
 
 

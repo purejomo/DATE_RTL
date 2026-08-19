@@ -1,7 +1,7 @@
 # Verilator checks for the binary32 accumulation path added to the SIMD rows.
 #
-#   make            build and run both checks
-#   make arith      both localized binary32 adders only
+#   make            build and run every check
+#   make arith      the localized binary32 adder only
 #   make mac        the four-stage MAC lane pipeline only
 #   make clean
 #
@@ -13,34 +13,29 @@
 #
 # What each covers:
 #
-#   arith  both local FP32 adders over the same finite DAZ/FTZ contract, plus
-#          four million randomized pairs weighted toward cancellation,
-#          alignment and subnormal-input cases.
-#   mac    the internal binary16/bfloat16 widening, stage alignment, and the
-#          acc_clear / acc_enable semantics across a randomized stream with
-#          bubbles. The multipliers are taken as given, since they have their
-#          own exhaustive regressions under verif/tests.
+#   arith  the local FP32 adder over its finite DAZ/FTZ contract, plus four
+#          million randomized pairs weighted toward cancellation, alignment
+#          and subnormal-input cases.
+#   mac    the internal binary16 widening, stage alignment, and the acc_clear /
+#          acc_enable semantics across a randomized stream with bubbles. The
+#          multiplier is taken as given, since it has its own exhaustive
+#          regression under verif/tests.
 
 RTL       := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../rtl)
 VERILATOR ?= verilator
 VFLAGS    := --cc --exe --build -j 4 \
              -Wno-DECLFILENAME -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC
 
-ARITH_SOURCES := $(RTL)/1_hbmpim/hbmpim_fp32_add.v \
-                 $(RTL)/2_awq_hbmpim/awq_fp32_add.v
+ARITH_SOURCES := $(RTL)/1_hbmpim/hbmpim_fp32_add.v
 
 MAC_SOURCES := $(ARITH_SOURCES) \
                $(RTL)/1_hbmpim/hbmpim_fp16_mul.v \
-               $(RTL)/1_hbmpim/hbmpim_fp16_mac_1_lane.v \
-               $(RTL)/2_awq_hbmpim/awq_int4bf16_mul.v \
-               $(RTL)/2_awq_hbmpim/awq_int4bf16_mac_1_lane.v \
-               $(RTL)/2_awq_hbmpim/awq_int4fp16_mul.v \
-               $(RTL)/2_awq_hbmpim/awq_int4fp16_mac_1_lane.v
+               $(RTL)/1_hbmpim/hbmpim_fp16_mac_1_lane.v
 
-PCU_SOURCES := $(RTL)/3_awq_p3llm_16pe/compressor_4to2.sv \
-               $(RTL)/3_awq_p3llm_16pe/int4_asym_decode.v \
-               $(RTL)/3_awq_p3llm_16pe/int4float_align.v \
-               $(RTL)/3_awq_p3llm_16pe/int4float_pe.v
+PCU_SOURCES := $(RTL)/2_awq_p3llm_16pe/compressor_4to2.sv \
+               $(RTL)/2_awq_p3llm_16pe/int4_asym_decode.v \
+               $(RTL)/2_awq_p3llm_16pe/int4float_align.v \
+               $(RTL)/2_awq_p3llm_16pe/int4float_pe.v
 
 .PHONY: all arith mac align clean
 

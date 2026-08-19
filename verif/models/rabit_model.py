@@ -5,7 +5,7 @@ anywhere in the bit-accurate path, so a match against the RTL is a statement
 about the design rather than about the simulator's FPU. That is the same rule
 the other models in this directory follow.
 
-Reference semantics, matching rtl/5_rabit:
+Reference semantics, matching rtl/4_rabit:
 
     binary16 code (s, exp, frac) denotes
         (-1)**s * sig * 2**(e_eff - 25)
