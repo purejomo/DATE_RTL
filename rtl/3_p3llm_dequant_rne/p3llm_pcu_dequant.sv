@@ -204,6 +204,7 @@ module p3llm_pcu_dequant (
   logic [5:0]  mul_tag_count_q;
   logic        mul_tag_pop;
   logic        mul_tag_space;
+  logic        pack_batch_busy_q;
 
   always_comb begin
     head_slot = slot_fifo_mem_q[slot_fifo_rd_ptr_q];
@@ -286,7 +287,6 @@ module p3llm_pcu_dequant (
   // ------------------------------------------------------------------------
   // Shared final FP32 * FP16 scale and RNE FP8-E4M3 pack pipeline
   // ------------------------------------------------------------------------
-  logic        pack_batch_busy_q;
   logic [4:0]  pack_return_count_q;
   logic        pack_in_valid;
   logic [31:0] pack_fp32;
@@ -302,6 +302,7 @@ module p3llm_pcu_dequant (
   logic [4:0] pack_tag_wr_ptr_q;
   logic [5:0] pack_tag_count_q;
   logic       pack_tag_pop;
+  logic [127:0] fp8_result_q;
 
   always_comb begin
     pack_in_valid = add_out_valid && (add_tag_count_q != 6'd0) &&
@@ -338,8 +339,6 @@ module p3llm_pcu_dequant (
              pack_batch_busy_q || (pack_tag_count_q != 6'd0) ||
              result_valid_o;
   end
-
-  logic [127:0] fp8_result_q;
 
   // ------------------------------------------------------------------------
   // Sequential state
