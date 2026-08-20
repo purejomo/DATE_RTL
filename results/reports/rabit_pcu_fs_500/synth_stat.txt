@@ -3,79 +3,83 @@
 
 === rabit_pcu_fs ===
 
-   Number of wires:              83605
-   Number of wire bits:          85091
-   Number of public wires:        4182
-   Number of public wire bits:    5668
+   Number of wires:              58314
+   Number of wire bits:          59800
+   Number of public wires:        2902
+   Number of public wire bits:    4388
    Number of ports:                 37
    Number of port bits:           1523
    Number of memories:               0
    Number of memory bits:            0
    Number of processes:              0
-   Number of cells:              79921
-     AND2_X1                       720
-     AND2_X2                        61
-     AND2_X4                        19
-     AND3_X1                        72
+   Number of cells:              55890
+     AND2_X1                       431
+     AND2_X2                        14
+     AND2_X4                         2
+     AND3_X1                        85
      AND3_X2                         4
-     AND3_X4                        11
-     AND4_X1                        31
-     AOI21_X1                     5362
-     AOI21_X2                      114
-     AOI21_X4                        6
-     AOI22_X1                      193
-     AOI22_X2                        1
-     BUF_X1                       2262
-     BUF_X16                        37
-     BUF_X2                        334
+     AND4_X1                        12
+     AND4_X2                         1
+     AOI21_X1                     3026
+     AOI21_X2                      121
+     AOI21_X4                       23
+     AOI22_X1                      147
+     AOI22_X2                        2
+     AOI22_X4                        1
+     BUF_X1                       1143
+     BUF_X16                        36
+     BUF_X2                        393
      BUF_X32                         7
-     BUF_X4                        306
-     BUF_X8                        146
-     CLKBUF_X1                     641
-     CLKBUF_X2                       5
-     CLKBUF_X3                      69
-     DFF_X1                       4208
-     INV_X1                      12784
-     INV_X2                        313
-     INV_X4                        102
-     INV_X8                         15
+     BUF_X4                        232
+     BUF_X8                        109
+     CLKBUF_X1                     503
+     CLKBUF_X2                       8
+     CLKBUF_X3                      22
+     DFF_X1                       2948
+     INV_X1                       8969
+     INV_X16                         1
+     INV_X2                        171
+     INV_X4                         36
+     INV_X8                          7
      LOGIC0_X1                       1
-     MUX2_X1                       634
-     MUX2_X2                         1
-     NAND2_X1                    18802
-     NAND2_X2                     1378
-     NAND2_X4                      464
-     NAND3_X1                     4868
-     NAND3_X2                      267
-     NAND3_X4                       36
-     NAND4_X1                      511
-     NAND4_X2                       33
-     NAND4_X4                        7
-     NOR2_X1                      4690
-     NOR2_X2                       484
-     NOR2_X4                       135
-     NOR3_X1                       284
-     NOR3_X2                         6
-     NOR3_X4                         2
-     NOR4_X1                        40
-     NOR4_X4                         2
-     OAI211_X2                       5
-     OAI21_X1                     8157
-     OAI21_X2                      112
-     OAI21_X4                       13
-     OAI221_X1                     307
-     OAI22_X1                     2473
-     OR2_X1                       2154
-     OR2_X2                         52
-     OR2_X4                         20
-     OR3_X1                         91
-     OR3_X2                          2
-     OR4_X1                         29
-     XNOR2_X1                     4960
+     MUX2_X1                       509
+     NAND2_X1                    14818
+     NAND2_X2                      394
+     NAND2_X4                      102
+     NAND3_X1                     2486
+     NAND3_X2                       60
+     NAND3_X4                        5
+     NAND4_X1                      269
+     NAND4_X2                        7
+     NAND4_X4                        4
+     NOR2_X1                      3547
+     NOR2_X2                       142
+     NOR2_X4                        43
+     NOR3_X1                       228
+     NOR3_X2                        31
+     NOR3_X4                         6
+     NOR4_X1                        39
+     NOR4_X2                        68
+     NOR4_X4                        35
+     OAI21_X1                     5137
+     OAI21_X2                      129
+     OAI21_X4                       11
+     OAI221_X1                     360
+     OAI221_X4                       1
+     OAI22_X1                     1941
+     OAI22_X2                        1
+     OR2_X1                       1721
+     OR2_X2                         26
+     OR2_X4                          9
+     OR3_X1                         51
+     OR3_X2                          4
+     OR4_X1                          6
+     OR4_X2                          1
+     XNOR2_X1                     4436
      XNOR2_X2                       53
-     XOR2_X1                      1021
-     XOR2_X2                         4
+     XOR2_X1                       740
+     XOR2_X2                        15
 
-   Chip area for module '\rabit_pcu_fs': 93522.408000
-     of which used for sequential elements: 19028.576000 (20.35%)
+   Chip area for module '\rabit_pcu_fs': 65421.636000
+     of which used for sequential elements: 13330.856000 (20.38%)
 

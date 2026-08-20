@@ -6,12 +6,10 @@ here as a shadow register file: the testbench watches cvt_we_o / cvt_entry_o /
 cvt_blk_o and plays the entry back on grf_blk_i, exactly as the base variant's
 testbench does.
 
-Command stream, one column slot = two PCU cycles (tCCD_S), which is what makes
-the throughput claim in README.md checkable from the waveform:
+Command stream, one column slot = two PCU cycles:
 
-    per stripe   WR_G x 4
     per chunk    WR_H, WR_X, RD og0, RD og1, RD og2, RD og3
-    per stripe   one dequantizing drain
+    per stripe   (WR_G group, dequantize group) x 4
 
 The checks are:
   * every y beat matches ``PcuFsGolden`` bit for bit;
@@ -32,15 +30,10 @@ from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge
 
 from rabit_fs_model import (
     ALIGN_MAX,
-    DQ_LANES,
-    DRAIN_CYCLES,
-    G_WORDS,
     H_FMT_FP16,
     H_FMT_FP8,
     NGROUP,
     NIN,
-    NOUT_PER_WORD,
-    NOUT_STRIPE,
     NPATH,
     PcuFsGolden,
     fp8_e4m3_code,
@@ -55,8 +48,21 @@ WRK_X = 0
 WRK_H = 1
 WRK_G = 2
 
-BLK_W = NIN * 13 + 6            # MANT_W = 12
-Y_BEATS = NOUT_STRIPE // DQ_LANES
+NOUT_PER_WORD = int(os.environ.get("RABIT_FS_NOUT", "8"))
+DQ_LANES = int(os.environ.get("RABIT_FS_DQ_LANES", "1"))
+OUT_LANES = int(os.environ.get("RABIT_FS_OUT_LANES", str(DQ_LANES)))
+MANT_W = int(os.environ.get("RABIT_FS_MANT_W", "12"))
+RD_CYCLES = int(os.environ.get("RABIT_FS_RD_CYCLES", "2"))
+ACC_W = int(os.environ.get("RABIT_FS_ACC_W", "27"))
+NOUT_STRIPE = NGROUP * NOUT_PER_WORD
+NHALF = NOUT_PER_WORD // DQ_LANES
+GROUP_DRAIN_CYCLES = NPATH * NHALF
+DRAIN_CYCLES = NGROUP * GROUP_DRAIN_CYCLES
+G_OUT_PER_WORD = 256 // (NPATH * 16)
+G_WORDS = NOUT_STRIPE // G_OUT_PER_WORD
+
+BLK_W = NIN * (MANT_W + 1) + 6
+Y_BEATS_PER_GROUP = NOUT_PER_WORD // OUT_LANES
 
 
 # ---------------------------------------------------------------------------
@@ -252,13 +258,16 @@ class Harness:
             dut.rd_pair_i.value = pair
             dut.rd_word_i.value = word
 
-        first = await self.cycle(drive)
-        assert first["rd_ready"] == 0, "column word consumed in one cycle"
-        second = await self.cycle(drive)
-        assert second["rd_ready"] == 1, "column word not consumed in NPATH cycles"
+        for cycle in range(RD_CYCLES):
+            snap = await self.cycle(drive)
+            expect_ready = cycle == RD_CYCLES - 1
+            assert snap["rd_ready"] == expect_ready, (
+                f"column word ready={snap['rd_ready']} at cycle {cycle + 1}, "
+                f"expected {RD_CYCLES} cycles"
+            )
 
-    async def dq_drain(self):
-        """Request the drain and collect its beats.
+    async def dq_drain(self, group):
+        """Request one group's drain and collect its beats.
 
         dq_req_i is held until dq_ready_o goes high, the usual ready/valid rule:
         the last column word's stage B is still retiring into the accumulator
@@ -271,7 +280,7 @@ class Harness:
         def drive(dut):
             dut.dq_req_i.value = 1
 
-        for wait in range(DRAIN_CYCLES):
+        for wait in range(GROUP_DRAIN_CYCLES):
             snap = await self.cycle(drive)
             if snap["dq_ready"]:
                 break
@@ -279,14 +288,15 @@ class Harness:
             raise AssertionError("dequantizing drain was never accepted")
 
         busy_cycles = 0
-        for _ in range(4 * DRAIN_CYCLES):
+        for _ in range(4 * GROUP_DRAIN_CYCLES):
             snap = await self.idle_snap()
             if snap["dq_busy"]:
                 busy_cycles += 1
-            if len(self.y_beats) == Y_BEATS:
+            if len(self.y_beats) == Y_BEATS_PER_GROUP:
                 return busy_cycles
         raise AssertionError(
-            f"drain produced {len(self.y_beats)} of {Y_BEATS} beats"
+            f"group {group} drain produced {len(self.y_beats)} of "
+            f"{Y_BEATS_PER_GROUP} beats"
         )
 
     async def idle_snap(self):
@@ -338,7 +348,13 @@ async def run_problem(dut, rng, dout, din, check_raw_drain=False):
     bits, x_codes, h_codes, g_codes = random_stimulus(rng, dout, din, h_fmt)
     e0 = choose_e0(x_codes, h_codes, h_fmt)
 
-    model = PcuFsGolden(h_fmt=h_fmt, align_max=ALIGN_MAX)
+    model = PcuFsGolden(
+        h_fmt=h_fmt,
+        align_max=ALIGN_MAX,
+        nout=NOUT_PER_WORD,
+        mant_w=MANT_W,
+        acc_w=ACC_W,
+    )
     model.e0 = e0
 
     dut.cfg_e0_i.value = e0
@@ -349,18 +365,6 @@ async def run_problem(dut, rng, dout, din, check_raw_drain=False):
     n_stripes = dout // NOUT_STRIPE
 
     for stripe in range(n_stripes):
-        # ---- g load: four ordinary column writes at the top of the stripe
-        for quarter in range(G_WORDS):
-            local = [
-                g_codes[p][
-                    stripe * NOUT_STRIPE + quarter * NOUT_PER_WORD:
-                    stripe * NOUT_STRIPE + (quarter + 1) * NOUT_PER_WORD
-                ]
-                for p in range(NPATH)
-            ]
-            await harness.wr_single(WRK_G, quarter, pack_g_word(local, 0))
-            model.write_g(quarter, local)
-
         # ---- the k sweep, unchanged from the base schedule
         for k_chunk in range(n_kchunks):
             pair = k_chunk % 2
@@ -410,25 +414,40 @@ async def run_problem(dut, rng, dout, din, check_raw_drain=False):
                         )
             continue
 
-        # ---- dequantizing drain
-        busy = await harness.dq_drain()
-        want = model.dq_drain()
+        # ---- group-streamed output scale and dequantizing drain
+        for group in range(NGROUP):
+            lo = stripe * NOUT_STRIPE + group * NOUT_PER_WORD
+            local = [g_codes[p][lo:lo + NOUT_PER_WORD] for p in range(NPATH)]
+            await harness.wr_single(
+                WRK_G, group, pack_g_word(local, 0, nout=NOUT_PER_WORD)
+            )
+            model.write_g(group, local)
 
-        assert len(harness.y_beats) == Y_BEATS
-        for index, (beat, data, last) in enumerate(harness.y_beats):
-            assert beat == index, f"y beat arrived out of order: {beat} != {index}"
-            assert last == (index == Y_BEATS - 1)
-            for lane in range(DQ_LANES):
-                got = (data >> (lane * 16)) & 0xFFFF
-                expect = want[index * DQ_LANES + lane]
-                assert got == expect, (
-                    f"stripe {stripe} output {index*DQ_LANES+lane}: "
-                    f"y = {got:#06x}, model = {expect:#06x}"
+            busy = await harness.dq_drain(group)
+            want = model.dq_drain(group)
+
+            assert len(harness.y_beats) == Y_BEATS_PER_GROUP
+            for index, (beat, data, last) in enumerate(harness.y_beats):
+                expected_beat = group * Y_BEATS_PER_GROUP + index
+                assert beat == expected_beat, (
+                    f"y beat arrived out of order: {beat} != {expected_beat}"
                 )
+                assert last == (
+                    group == NGROUP - 1 and index == Y_BEATS_PER_GROUP - 1
+                )
+                for lane in range(OUT_LANES):
+                    got = (data >> (lane * 16)) & 0xFFFF
+                    out_local = index * OUT_LANES + lane
+                    expect = want[out_local]
+                    assert got == expect, (
+                        f"stripe {stripe} group {group} output {out_local}: "
+                        f"y = {got:#06x}, model = {expect:#06x}"
+                    )
 
-        assert busy >= DRAIN_CYCLES, (
-            f"drain claimed fewer than {DRAIN_CYCLES} cycles ({busy})"
-        )
+            assert busy >= GROUP_DRAIN_CYCLES, (
+                f"group drain claimed fewer than {GROUP_DRAIN_CYCLES} cycles "
+                f"({busy})"
+            )
 
     final = await harness.idle_snap()
     assert final["status_fs"] & 0b1000 == 0, (
@@ -481,13 +500,6 @@ async def test_fs_drain_cost(dut):
     harness = Harness(dut, e0)
     await harness.idle(1)
 
-    for quarter in range(G_WORDS):
-        local = [
-            g_codes[p][quarter * NOUT_PER_WORD:(quarter + 1) * NOUT_PER_WORD]
-            for p in range(NPATH)
-        ]
-        await harness.wr_single(WRK_G, quarter, pack_g_word(local, 0))
-
     if h_fmt == H_FMT_FP8:
         await harness.wr_single(
             WRK_H, 0, pack_h_word(h_codes[0][:NIN], h_codes[1][:NIN])
@@ -499,6 +511,9 @@ async def test_fs_drain_cost(dut):
     for out_group in range(NGROUP):
         await harness.rd(0, out_group, column_word(bits, 0, 0, out_group))
 
+    local = [g_codes[p][:NOUT_PER_WORD] for p in range(NPATH)]
+    await harness.wr_single(WRK_G, 0, pack_g_word(local, 0, nout=NOUT_PER_WORD))
+
     # Count the cycles the sequencer holds the accumulator port by watching how
     # long a read is refused.
     harness.y_beats = []
@@ -507,7 +522,7 @@ async def test_fs_drain_cost(dut):
     def request(dut_):
         dut_.dq_req_i.value = 1
 
-    for _ in range(DRAIN_CYCLES):
+    for _ in range(GROUP_DRAIN_CYCLES):
         snap = await harness.cycle(request)
         if snap["dq_ready"]:
             break
@@ -515,15 +530,15 @@ async def test_fs_drain_cost(dut):
         raise AssertionError("dequantizing drain was never accepted")
 
     stalled = 0
-    for _ in range(4 * DRAIN_CYCLES):
+    for _ in range(4 * GROUP_DRAIN_CYCLES):
         snap = await harness.idle_snap()
         if snap["dq_busy"]:
             stalled += 1
-        if len(harness.y_beats) == Y_BEATS:
+        if len(harness.y_beats) == Y_BEATS_PER_GROUP:
             break
 
     # 16 port cycles plus the three pipeline stages behind them.
-    assert stalled == DRAIN_CYCLES + 3, (
+    assert stalled == GROUP_DRAIN_CYCLES + 3, (
         f"drain held the design busy for {stalled} cycles, expected "
-        f"{DRAIN_CYCLES + 3}"
+        f"{GROUP_DRAIN_CYCLES + 3}"
     )

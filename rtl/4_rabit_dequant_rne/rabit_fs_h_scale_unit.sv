@@ -32,12 +32,12 @@
 // binary16 before the block convert costs nothing at the entry's own exponent:
 // with MANT_W = 12 the convert unit stores the top lane as sig << 1, so an
 // 11-bit significand is exactly representable and only lanes already being
-// right-aligned see a second rounding. See README.md, "double rounding".
+// right-aligned see a second rounding.
 //
 // FP8-E4M3 follows OCP: bias 7, no infinity, and 0x7F / 0xFF are NaN. Like
 // rabit_cvt_fp16_blk with binary16 exp == 31, a NaN code is not special cased
 // -- it decodes as sig_h = 15, e_h = 15 -- but it does raise h_nan_o so a
-// mis-quantized scale table cannot pass silently. See README.md, open question.
+// mis-quantized scale table cannot pass silently.
 module rabit_fs_h_scale_unit #(
     parameter int NIN     = 16,
     parameter int NPATH   = 2,

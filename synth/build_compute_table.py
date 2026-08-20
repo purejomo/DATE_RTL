@@ -1,12 +1,14 @@
 """Assemble the compute-only comparison table.
 
-The table this feeds is about arithmetic, so every row is synthesized at a
-boundary that contains no register file, no control and no buffers.
+The table this feeds is about arithmetic. Every row includes its datapath and
+architectural accumulator; GRF/SRF storage, command memory and bank interfaces
+are excluded. A small amount of local sequencing remains where it is part of
+the datapath contract, and SpinQuant deliberately includes the read-beat latch
+that enables its two-pump schedule.
 
-Every row includes its accumulator. The base rows all use the same 32-bit
-width and the same four registered stages; the acc16 rows deliberately do not,
-because narrowing that accumulator is what they exist to price. The accumulator
-width is stated per row rather than assumed.
+Base rows use 32-bit accumulators and acc16 rows deliberately do not. Pipeline
+depth is design-specific, so the accumulator width and timing result are stated
+per row rather than inferred from a shared template.
 
   * The HBM-PIM baseline is a SIMD row of MAC lanes. Each lane multiplies at
     16-bit float and accumulates at binary32 into a register of its own. It
@@ -101,17 +103,17 @@ ROWS = [
     #                other rows count. RaBiT time-multiplexes those 8 lanes over
     #                64 architectural accumulators (4 output groups x 2 paths),
     #                which is why its DFF count is high for its area -- see
-    #                results/designs/rabit.md.
+    #                docs/rabit_pcu_spec.md.
     #
     # um2/MAC therefore compares a 2-bit residual-binary product against FP16
     # and INT4 products. That is the same cross-precision comparison the rest of
     # the table already makes; the precision column is what qualifies it.
     #
-    # Only the 250 MHz row is listed. The 500 MHz build misses setup by 0.04 ns
-    # on the convert path, so it is a sweep point in results/designs/rabit.md
-    # rather than a table row.
+    # The 500 MHz target misses setup by 0.04 ns on the convert path. Keep the
+    # target in the raw table for the current experiment, but do not describe
+    # it as a timing-closed operating point in user-facing documentation.
     ("rabit",   "2-bit RB/FP16", "RaBiT PCU",  128,
-     "rabit_pcu_250",             0,  8, 128, 250, 32),
+     "rabit_pcu_500",             0,  8, 128, 500, 32),
 
     # SpinQuant W4A4. The organization column reads "P3-LLM PCU" because that is
     # what it is: 16 PEs of four multipliers with one accumulator lane per PE,
@@ -131,7 +133,7 @@ ROWS = [
     # The measured boundary carries more state than the P3-LLM rows do: four
     # accumulator entries per PE instead of one (the GRF reading this design
     # targets) plus the 256-bit bank read latch that makes the 2-pump schedule
-    # work. results/designs/spinquant_area_report.md prices both.
+    # work. docs/spinquant_pcu_spec.md reports both sweep points.
     ("spinquant", "INT4/INT4", "P3-LLM PCU", 64,
      "spinquant_pcu_500",        64, 16, 64, 500, 32),
 
@@ -155,7 +157,7 @@ ROWS = [
     ("p3llm",   "FP4/FP8",   "P3-LLM PCU",  64,
      "p3llm_pcu_acc16_500",        64, 16, 64, 500, 16),
     ("rabit",   "2-bit RB/FP16 m10", "RaBiT PCU", 128,
-     "rabit_pcu_acc16_250",         0,  8, 128, 250, 16),
+     "rabit_pcu_acc16_500",         0,  8, 128, 500, 16),
     # SpinQuant narrows differently from the three rows above it. Their
     # accumulators hold block-floating-point values whose low bits are already
     # approximate, so an RNE narrow costs precision and nothing else. This one
@@ -226,6 +228,19 @@ def power_of(top: str, label: str):
     return float(match.group(1)) if match else None
 
 
+def setup_slack(label: str) -> float | None:
+    """Return worst max-delay slack from the published OpenROAD report."""
+    path = R / "reports" / label / "1_Post_synthesis.rpt"
+    if not path.exists():
+        return None
+    match = re.search(
+        r"Post synthesis report_checks -path_delay max.*?"
+        r"^\s*([-+]?\d+(?:\.\d+)?)\s+slack \((?:MET|VIOLATED)\)",
+        path.read_text(), re.M | re.S,
+    )
+    return float(match.group(1)) if match else None
+
+
 def main() -> None:
     measured = {}
     with (R / "area.csv").open() as handle:
@@ -243,6 +258,7 @@ def main() -> None:
         seq = sequential_area(R / "reports" / label / "synth_stat.txt")
         gmacs = mac_cyc * mhz * 1e6 / 1e9
         power = power_of(entry["top"], label)
+        slack = setup_slack(label)
         rows.append({
             "paper": paper,
             "precision": precision,
@@ -263,6 +279,8 @@ def main() -> None:
             "accumulator_bits": acc_w,
             "cells": entry["cells"],
             "dffs": entry["dffs"],
+            "setup_slack_ns": "" if slack is None else f"{slack:+.2f}",
+            "timing_met": "" if slack is None else ("yes" if slack >= 0 else "no"),
         })
 
     path = R / "comparison_compute.csv"

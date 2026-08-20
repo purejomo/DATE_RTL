@@ -4,9 +4,9 @@
 #   ./run_spinquant.sh          synthesize every SpinQuant row and publish
 #   ./run_spinquant.sh main     only the delivered configuration
 #
-# Measured at the same arithmetic boundary as every other row in the table: the
-# compute datapath plus the architectural accumulators, with the input GRF, the
-# CRF, the command decode and the bank interface left out. Two boundary calls
+# The boundary includes the compute datapath, local sequencing and architectural
+# accumulators, with the input GRF, command memory and bank interface left out.
+# Two boundary calls
 # are worth stating outright, and each has a sweep row that prices it:
 #
 #   - the 256-bit bank read latch is inside. It is what lets one weight beat
@@ -46,7 +46,15 @@ SPINQUANT_SOURCES=(
     "${RTL}/spinquant_pe.sv"
     "${RTL}/spinquant_acc_regfile.sv"
     "${RTL}/spinquant_pcu_top.sv"
-    "${RTL}/spinquant_pcu_synth.sv"
+    "${RTL}/spinquant_pcu.sv"
+    "${RTL}/spinquant_pcu_acc32.sv"
+    "${RTL}/spinquant_pcu_nolatch.sv"
+    "${RTL}/spinquant_blk_pe.sv"
+    "${RTL}/spinquant_blk_acc.sv"
+    "${RTL}/spinquant_pcu_r2.sv"
+    "${RTL}/spinquant_pcu_r2e2.sv"
+    "${RTL}/spinquant_pcu_r4.sv"
+    "${RTL}/spinquant_pcu_w512.sv"
 )
 
 # label : top : clock period (ns)
@@ -114,6 +122,3 @@ for label in "${labels[@]}"; do
     rm -rf "${RESULTS}/reports/${label}"
     cp -a "${OUT}/reports/${label}" "${RESULTS}/reports/${label}"
 done
-
-mkdir -p "${RESULTS}/designs"
-python3 "${HERE}/build_spinquant_report.py"

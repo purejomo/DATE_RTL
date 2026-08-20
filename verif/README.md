@@ -8,25 +8,15 @@ verif/
 ├── models/                  golden model (순수 파이썬 정수 연산)
 │   ├── float_reference.py       IEEE-754 FP16 / BF16 정확 모델
 │   ├── int4float_pcu_model.py   awq PCU 모델
+│   ├── awq_dequant_model.py     awq dequant 모델
 │   ├── p3llm_formats.py         p3llm FP8 / FP4 디코더 모델
 │   ├── p3llm_pcu_model.py       p3llm PE · PCU 모델
+│   ├── p3llm_dequant_model.py   p3llm dequant · FP8 pack 모델
 │   ├── rabit_model.py           rabit 변환 · PE · 누산기 · PCU 모델
-│   └── spinquant_model.py       spinquant W4A4 정수 GEMV · beat 패킹 · PCU 모델
-└── tests/
-    ├── test_fp16_mul_lane.py        baseline
-    ├── test_int4float_pcu.py        awq PCU (v1 broadcast ZP / v2 PE별 ZP 공용)
-    ├── test_p3llm_decoders.py       p3llm
-    ├── test_p3llm_pe.py             p3llm
-    ├── test_p3llm_pcu.py            p3llm
-    ├── test_rabit_cvt.py            rabit convert-on-write
-    ├── test_rabit_pe.py             rabit PE
-    ├── test_rabit_acc.py            rabit 누산기 배열
-    ├── test_rabit_pcu.py            rabit end-to-end GEMV
-    ├── test_spinquant_pe.py         spinquant PE
-    ├── test_spinquant_acc.py        spinquant 누산기 파일
-    ├── test_spinquant_pcu.py        spinquant end-to-end W4A4 GEMV
-    ├── common.py                    cocotb 헬퍼
-    └── harness/                     디코더 · compressor · cvt 노출용 SV 래퍼
+│   ├── rabit_fs_model.py        rabit dequant/full-scale 모델
+│   ├── spinquant_model.py       spinquant W4A4 정수 GEMV · PCU 모델
+│   └── spinquant_dequant_model.py spinquant dequant/requant 모델
+└── tests/                   설계군별 cocotb 테스트와 산술 harness
 fp32/                        binary32 누산 경로 (cocotb 없이 Verilator만)
 ├── Makefile
 ├── tb_top.v / main.cpp          binary32 누산 가산기
@@ -47,7 +37,7 @@ make distclean          # 산출물 삭제
 
 ## 테스트 목록
 
-논문의 5개 행을 모두 덮는다.
+다섯 설계군의 base와 현재 acc16/dequant/requant 변형을 모두 덮는다(총 40개).
 
 | 논문 행 | 이름 | RTL top | 무엇을 확인하나 |
 |---|---|---|---|
@@ -77,13 +67,9 @@ make distclean          # 산출물 삭제
 | rabit | `rabit_pcu_noshift` | `rabit_pcu_noshift` | 같은 것, SHIFTER_EN 0 |
 | rabit | `rabit_pcu_m10_noshift` | `rabit_pcu_m10_noshift` | 같은 것, 두 노브 동시 |
 | rabit | `rabit_pcu_acc16` | `rabit_pcu_acc16` | 축② `ACC_W` 16 · `MANT_W` 10 · `SHIFT_RND` 1. 같은 end-to-end GEMV |
-| rabit-fs | `rabit_fs` | `rabit_pcu_fs` | full-scale variant: h·x를 PCU에서 곱하고 g 역양자화까지 수행, 최종 binary16 y를 bit-정합 대조 |
-| rabit-fs | `rabit_fs_pipe` | `rabit_pcu_fs_p` | 같은 것, `H_MUL_PIPE = 1` (곱셈기와 convert 사이에 레지스터, tCCD_S 충족) |
-| rabit-fs | `rabit_fs_h16` | `rabit_pcu_fs_h16` | 같은 것, `H_FMT = FP16_3WR` (chunk당 WR 3개) |
+| rabit-fs | `rabit_fs` | `rabit_pcu_fs` | 8 PE/ACC27/DQ1 최종 구조. `s_in·x`, group-scale dequant, FP16 RNE 출력과 raw drain을 bit-정합 대조 |
 
-rabit-fs 세 행의 RTL 은 `rtl/4_rabit_dequant_rne` (구 `4_rabit_fullscale`) 에 있다.
-테스트 이름과 top 이름은 유지했다 — `verif/models/rabit_fs_model.py`,
-`synth/build_rabit_fs_report.py`, `results/` 산출물 이름이 모두 여기에 걸려 있다.
+rabit-fs의 모든 RTL 의존성은 `rtl/4_rabit_dequant_rne` 안에 있다.
 
 | spinquant | `spinquant_pe` | `spinquant_pe` | (weight, activation) 코드쌍 전수, way별 one-hot, 24b chain 경계, 랜덤 |
 | spinquant | `spinquant_acc` | `spinquant_acc_regfile` | entry 격리, accumulate/drain 두 읽기 포트 독립성, reset |
@@ -94,6 +80,10 @@ rabit-fs 세 행의 RTL 은 `rtl/4_rabit_dequant_rne` (구 `4_rabit_fullscale`) 
 | spinquant | `spinquant_pcu_r2` | `spinquant_pcu_r2` | 같은 것, NROW 2 · entry 4 |
 | spinquant | `spinquant_pcu_r4` | `spinquant_pcu_r4` | 같은 것, NROW 4 |
 | spinquant | `spinquant_pcu_w512` | `spinquant_pcu_w512` | 같은 것, NPE 32 (512b beat) |
+| spinquant | `spinquant_pcu_acc16` | `spinquant_pcu_acc16` | 축② INT16 누산, `ACC_RSH=7`로 MSB 보존. base와 같은 GEMV 회귀 |
+| spinquant | `spinquant_rq_cvt` | `spinquant_rq_fp32_to_int4` | 축④ FP32→UINT4 RNE + zero-point + clamp, 랜덤·경계값 |
+| spinquant | `spinquant_pcu_dq` | `spinquant_pcu_dq` | 축③ raw INT32 + 정수 bias + scale → binary16 drain, lane/tag/status end-to-end |
+| spinquant | `spinquant_pcu_rq` | `spinquant_pcu_rq` | 축④ 2-pass min/max 뒤 UINT4 requant drain end-to-end |
 
 ## binary32 누산 경로 (`verif/fp32`)
 
@@ -123,6 +113,9 @@ cd verif/fp32 && make
 | `RABIT_FS_PROBLEMS` / `RABIT_FS_SEED` | rabit full-scale 문제 수 / 시드 | `4` / `20260814` |
 | `SPINQUANT_PCU_ITERS` | spinquant PCU 랜덤 MAC command 수 | `6000` |
 | `SPINQUANT_PE_ITERS` | spinquant PE 랜덤 벡터 수 | `20000` |
+| `SPINQUANT_DQ_ROUNDS` | spinquant 축③ drain batch 수 | `12` |
+| `SPINQUANT_RQ_ROUNDS` | spinquant 축④ 2-pass drain batch 수 | `12` |
+| `SPINQUANT_RQ_ITERS` | FP32→UINT4 변환기 랜덤 입력 수 | `20000` |
 
 ```bash
 PCU_ITERS=300 P3LLM_RANDOM_TILES=200 make                         # 빠른 확인

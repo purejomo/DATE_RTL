@@ -7,13 +7,11 @@
 //     u_p[k] = h_p[k] * x[k]                       <- here, not in the NPU
 //     y[j]   = g_1[j]*A_1[j] + g_2[j]*A_2[j]       <- here, not in the NPU
 //
-// Everything that made the base variant work is reused unmodified from
-// rtl/4_rabit: the convert-on-write unit, the processing elements and their
-// compressor tree and aligner, the accumulator register file, and the
-// sequencer. This file adds three blocks and rewires the ports around them.
+// This directory carries local copies of the base compute blocks, so the
+// variant compiles without importing RTL from rtl/4_rabit.
 //
 //   rabit_fs_h_scale_unit   fp16 x fp8 multiply array on the write path
-//   rabit_fs_g_buffer       the stripe's 32 x 2 binary16 output scales
+//   rabit_fs_g_group_buffer one group's 8 x 2 binary16 output scales
 //   rabit_fs_dq_unit        the drain-time dequantizer, plus its sequencer
 //
 // The inner loop is byte-for-byte the base schedule: two writes and four reads
@@ -22,24 +20,25 @@
 //
 //     wr_kind_i = WRK_H   h chunk, {h1[k], h2[k]} as FP8-E4M3 (256b)
 //     wr_kind_i = WRK_X   x chunk, binary16 x 16 (256b), takes NPATH cycles
-//     wr_kind_i = WRK_G   one quarter of the stripe's g table (256b)
+//     wr_kind_i = WRK_G   one physical word of the stripe's g table (256b)
 //
 // A WRK_H write must precede the WRK_X write of the same chunk, because the x
-// write is the cycle pair that consumes it. The four WRK_G writes happen once
-// per stripe, before its k sweep.
+// write is the cycle pair that consumes it. After the k sweep, WRK_G loads one
+// 8-output group immediately before that group's dequantizing drain.
 //
 // There is no multiplier on the read path. h multiplies live on the write path,
 // g multiplies live on the drain path, and the PE array is the same
 // multiplier-free sign-and-add tree the base variant uses.
 //
 // Two drains coexist. drain_req_i is the base's raw per-group drain, kept for
-// debug and for measuring against the base variant; dq_req_i drains a whole
-// stripe through the dequantizer and produces binary16 y. They share the
+// debug and for measuring against the base variant; dq_req_i drains the group
+// selected by the most recent WRK_G and produces binary16 y. They share the
 // accumulator port, so neither may overlap the other or a column command.
 module rabit_pcu_fs_top #(
     parameter int MANT_W        = 12,
     parameter int SHIFTER_EN    = 1,
     parameter int NOUT_PER_WORD = 8,
+    parameter int PE_LANES      = NOUT_PER_WORD,
     parameter int NPATH         = 2,
     parameter int NIN           = 16,
     parameter int NGROUP        = 4,
@@ -61,9 +60,13 @@ module rabit_pcu_fs_top #(
     parameter int PSUM_W        = MANT_W + 1 + $clog2(NIN),
     parameter int DRAIN_W       = NOUT_PER_WORD*ACC_W,
     parameter int NOUT_STRIPE   = NGROUP*NOUT_PER_WORD,
+    parameter int NFOLD         = NOUT_PER_WORD / PE_LANES,
+    parameter int FW            = (NFOLD > 1) ? $clog2(NFOLD) : 1,
     parameter int NHALF         = NOUT_PER_WORD / DQ_LANES,
+    parameter int HW            = (NHALF > 1) ? $clog2(NHALF) : 1,
     parameter int BEAT_W        = $clog2(NGROUP*NHALF),
-    parameter int Y_W           = DQ_LANES*16
+    parameter int Y_W           = DQ_LANES*16,
+    parameter int PE_ACC_W      = PE_LANES*ACC_W
 ) (
     input  logic                    clk,
     input  logic                    rst_n,
@@ -119,9 +122,6 @@ module rabit_pcu_fs_top #(
     localparam int MANT_BUS = NIN*(MANT_W+1);
     localparam int NSLOT    = NGROUP*NPATH;
     localparam int SEL_W    = GW + PW;
-    localparam int IDX_W    = $clog2(NOUT_STRIPE);
-    localparam int WSEL_W   = $clog2((NOUT_STRIPE*NPATH*16)/256);
-
     localparam logic [1:0] WRK_X = 2'd0;
     localparam logic [1:0] WRK_H = 2'd1;
     localparam logic [1:0] WRK_G = 2'd2;
@@ -148,7 +148,11 @@ module rabit_pcu_fs_top #(
         w_is_x     = (wr_kind_i == WRK_X);
         w_start_c  = !w_busy_q && wr_valid_i && w_is_x && rst_n;
         w_active_c = w_busy_q || w_start_c;
-        w_path_c   = w_start_c ? {PW{1'b0}} : w_path_q;
+        // A new write always starts at path 0.  Select that value directly
+        // from the registered busy state instead of from w_start_c; otherwise
+        // rst_n/wr_valid_i sit on the h-scale/status timing path even though
+        // they cannot change the selected path value.
+        w_path_c   = w_busy_q ? w_path_q : {PW{1'b0}};
         w_pair_c   = w_start_c ? wr_sel_i[0] : w_pair_q;
 
         wr_ready_o = w_is_x ? (w_busy_q && (w_path_q == PW'(NPATH-1)))
@@ -212,8 +216,7 @@ module rabit_pcu_fs_top #(
     //
     // Unpipelined (H_MUL_PIPE = 0) is the specified datapath: one column-slot
     // cycle decodes h, multiplies, rounds to binary16, converts to a block entry
-    // and writes it. That is a long combinational path, and synthesis says it is
-    // what misses tCCD_S -- see README.md and results/rabit_fs_report.md.
+    // and writes it.
     //
     // H_MUL_PIPE = 1 splits it in two without costing a single column slot,
     // because the deadline still works out. Cycle 0 of the x write multiplies
@@ -284,24 +287,26 @@ module rabit_pcu_fs_top #(
     end
 
     logic [DQ_LANES*16-1:0] g_rd;
-    logic [IDX_W-1:0]       g_base;
+    logic [2:0]             g_local_base;
+    logic [GW-1:0]          g_group;
     logic [PW-1:0]          g_path;
     logic                   g_loaded;
 
-    rabit_fs_g_buffer #(
-        .NOUT  (NOUT_STRIPE),
+    rabit_fs_g_group_buffer #(
+        .NOUT  (NOUT_PER_WORD),
         .NPATH (NPATH),
         .NRD   (DQ_LANES)
     ) u_gbuf (
         .clk       (clk),
         .rst_n     (rst_n),
         .we_i      (g_we),
-        .wsel_i    (wr_sel_i[WSEL_W-1:0]),
+        .group_i   (wr_sel_i[GW-1:0]),
         .wdata_i   (wr_data_i),
-        .rd_base_i (g_base),
+        .rd_base_i (g_local_base),
         .rd_path_i (g_path),
         .g_o       (g_rd),
-        .loaded_o  (g_loaded)
+        .loaded_o  (g_loaded),
+        .group_o   (g_group)
     );
 
     // =====================================================================
@@ -316,7 +321,7 @@ module rabit_pcu_fs_top #(
     logic             fs_wr_en;
     logic [SEL_W-1:0] fs_wr_sel;
     logic             fs_lane_valid;
-    logic             fs_half;
+    logic [HW-1:0]    fs_half;
     logic             fs_path;
     logic [BEAT_W-1:0] fs_beat;
     logic             fs_last;
@@ -324,17 +329,20 @@ module rabit_pcu_fs_top #(
     logic             word_start;
     logic             stage_a_en;
     logic [PW-1:0]    path_sel;
+    logic [FW-1:0]    fold_sel;
     logic [SEL_W-1:0] ctrl_rd_sel;
     logic             ctrl_wr_en;
     logic [SEL_W-1:0] ctrl_wr_sel;
     logic             ctrl_wr_zero;
     logic             ctrl_wr_pe;
+    logic [FW-1:0]    ctrl_acc_fold;
     logic             ctrl_rd_ready;
     logic             ctrl_drain_ready;
 
     rabit_pcu_ctrl #(
         .NPATH  (NPATH),
-        .NGROUP (NGROUP)
+        .NGROUP (NGROUP),
+        .NFOLD  (NFOLD)
     ) u_ctrl (
         .clk           (clk),
         .rst_n         (rst_n),
@@ -347,11 +355,13 @@ module rabit_pcu_fs_top #(
         .word_start_o  (word_start),
         .stage_a_en_o  (stage_a_en),
         .path_sel_o    (path_sel),
+        .fold_sel_o    (fold_sel),
         .acc_rd_sel_o  (ctrl_rd_sel),
         .acc_wr_en_o   (ctrl_wr_en),
         .acc_wr_sel_o  (ctrl_wr_sel),
         .acc_wr_zero_o (ctrl_wr_zero),
         .acc_wr_pe_o   (ctrl_wr_pe),
+        .acc_fold_o    (ctrl_acc_fold),
         .drain_valid_o (drain_valid_o),
         .drain_group_o (drain_group_o),
         .drain_path_o  (drain_path_o),
@@ -359,7 +369,7 @@ module rabit_pcu_fs_top #(
         .rd_done_o     (rd_done_o)
     );
 
-    rabit_fs_drain_seq #(
+    rabit_fs_group_drain_seq #(
         .NGROUP        (NGROUP),
         .NPATH         (NPATH),
         .NOUT_PER_WORD (NOUT_PER_WORD),
@@ -368,6 +378,7 @@ module rabit_pcu_fs_top #(
         .clk          (clk),
         .rst_n        (rst_n),
         .req_i        (dq_req_i),
+        .group_i      (g_group),
         .pipe_idle_i  (ctrl_drain_ready),
         .ready_o      (fs_ready),
         .start_o      (fs_start),
@@ -379,7 +390,7 @@ module rabit_pcu_fs_top #(
         .lane_valid_o (fs_lane_valid),
         .half_o       (fs_half),
         .path_o       (fs_path),
-        .g_base_o     (g_base),
+        .g_base_o     (g_local_base),
         .g_path_o     (g_path),
         .beat_o       (fs_beat),
         .last_o       (fs_last)
@@ -392,7 +403,7 @@ module rabit_pcu_fs_top #(
         dq_busy_o     = fs_busy;
     end
 
-    // The GRF pair select is held across the whole 2-pump window so the command
+    // The GRF pair select is held across the whole folded pump window so the command
     // source only has to present it once, on the cycle the word starts.
     logic pair_q;
 
@@ -455,17 +466,22 @@ module rabit_pcu_fs_top #(
     always_comb drain_data_o = acc_rd_data;
 
     // ---- processing elements ---------------------------------------------
-    logic [NOUT_PER_WORD-1:0] pe_acc_sat;
-    logic [NOUT_PER_WORD-1:0] pe_shift_sat;
-    logic [DRAIN_W-1:0]       pe_acc_next;
+    logic [PE_LANES-1:0] pe_acc_sat;
+    logic [PE_LANES-1:0] pe_shift_sat;
+    logic [PE_ACC_W-1:0] pe_acc_next;
 
     genvar pe;
     generate
-        for (pe = 0; pe < NOUT_PER_WORD; pe = pe + 1) begin : g_pe
+        for (pe = 0; pe < PE_LANES; pe = pe + 1) begin : g_pe
             logic [NIN-1:0] pe_bits;
+            integer         stage_a_lane;
+            integer         stage_b_lane;
 
             always_comb begin
-                pe_bits = rd_word_i[pe*(NPATH*NIN) + path_sel*NIN +: NIN];
+                stage_a_lane = fold_sel * PE_LANES + pe;
+                stage_b_lane = ctrl_acc_fold * PE_LANES + pe;
+                pe_bits = rd_word_i[stage_a_lane*(NPATH*NIN) +
+                                    path_sel*NIN +: NIN];
             end
 
             rabit_pe #(
@@ -483,7 +499,7 @@ module rabit_pcu_fs_top #(
                 .b_bits_i    (pe_bits),
                 .blk_i       (blk_mant),
                 .shift_i     (shift_q),
-                .acc_cur_i   (acc_rd_data[pe*ACC_W +: ACC_W]),
+                .acc_cur_i   (acc_rd_data[stage_b_lane*ACC_W +: ACC_W]),
                 .acc_next_o  (pe_acc_next[pe*ACC_W +: ACC_W]),
                 .acc_sat_o   (pe_acc_sat[pe]),
                 .shift_sat_o (pe_shift_sat[pe]),
@@ -502,7 +518,12 @@ module rabit_pcu_fs_top #(
             acc_rd_sel  = ctrl_rd_sel;
             acc_wr_en   = ctrl_wr_en;
             acc_wr_sel  = ctrl_wr_sel;
-            acc_wr_data = ctrl_wr_zero ? {DRAIN_W{1'b0}} : pe_acc_next;
+            acc_wr_data = acc_rd_data;
+            if (ctrl_wr_zero) begin
+                acc_wr_data = {DRAIN_W{1'b0}};
+            end else if (ctrl_wr_pe) begin
+                acc_wr_data[ctrl_acc_fold*PE_ACC_W +: PE_ACC_W] = pe_acc_next;
+            end
         end
     end
 
@@ -543,7 +564,7 @@ module rabit_pcu_fs_top #(
     // =====================================================================
     //
     // status_sticky_o keeps the base meaning:
-    //   [0] a 32-bit accumulator add saturated
+    //   [0] an ACC_W-bit accumulator add saturated
     //   [1] an alignment left shift saturated (E0 set too far below max e_ent)
     //   [2] convert-on-write clamped a lane (only with SHIFTER_EN = 0)
     //
@@ -587,6 +608,8 @@ module rabit_pcu_fs_top #(
     initial begin
         if (WORD_W != NIN*NOUT_PER_WORD*NPATH)
             $fatal(1, "rabit_pcu_fs_top: WORD_W is derived, do not override it");
+        if (PE_LANES < 1 || (NOUT_PER_WORD % PE_LANES) != 0)
+            $fatal(1, "rabit_pcu_fs_top: PE_LANES must divide NOUT_PER_WORD");
         if (NGROUP != (1 << GW))
             $fatal(1, "rabit_pcu_fs_top: NGROUP must be a power of two");
     end

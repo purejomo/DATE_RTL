@@ -46,7 +46,7 @@
 //
 // A smaller shift keeps more low-order precision at the cost of saturating on
 // large groups; sweeping it is an accuracy question, not an area one, because
-// the shift is wiring. See the open items in EXTENSION_PLAN.md.
+// the shift is wiring; workload-level accuracy tuning is outside this RTL.
 module int4float_pe #(
     parameter integer ALIGNED_W = 20,  // signed width from int4float_align
     parameter integer ACC_W     = 16,  // narrowed accumulator width

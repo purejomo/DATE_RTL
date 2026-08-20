@@ -7,9 +7,9 @@ activation side of the schedule and what the drain produces.
 
     base        NPU sends u_p = h_p (*) x           WR u1, WR u2, RD x4
                 PCU returns raw A_1, A_2            NGROUP drain commands
-    full scale  NPU sends raw x and raw h           WR h, WR x,   RD x4
-                PCU returns finished binary16 y     one drain, 16 port cycles
-                plus one g load per stripe          WR_G x4
+    full scale  NPU sends raw x and raw s_in        WR s_in, WR x, RD x4
+                PCU returns finished binary16 y     four group drains
+                output scale is group-streamed      (WR_G, DQ) x4
 
 Two things are measured here rather than asserted, because both are claims the
 report has to stand behind:
@@ -70,10 +70,10 @@ from rabit_fs_model import (
 from rabit_model import PcuGolden, dequantize
 
 # One column command occupies one column slot, and tCCD_S makes a slot two PCU
-# cycles. The dequantizing drain holds the accumulator port for DRAIN_CYCLES
-# cycles after its request, which is DRAIN_CYCLES/2 slots the bank loses.
+# cycles. One group drain holds the accumulator port for GROUP_DRAIN_CYCLES;
+# the four group drains together cover the 32-output stripe.
 CYCLES_PER_SLOT = 2
-DRAIN_PORT_CYCLES = fs.DRAIN_CYCLES
+DRAIN_PORT_CYCLES = fs.GROUP_DRAIN_CYCLES
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def schedule_fs(
 ) -> Iterator[FsCommand]:
     """Emit the full-scale command stream.
 
-    Per stripe:  WR_G x G_WORDS,  then the k sweep,  then one DQ.
+    Per stripe:  the k sweep, then (WR_G group, DQ group) x G_WORDS.
     Per chunk:   WR_H (x1 for FP8, xNPATH for the binary16 fallback),
                  WR_X, RD og0..og3.
 
@@ -161,17 +161,6 @@ def schedule_fs(
         stripes = range(packing.n_stripes)
 
     for stripe in stripes:
-        for quarter in range(G_WORDS):
-            lo = stripe * OUT_PER_STRIPE + quarter * NOUT
-            yield FsCommand(
-                kind="WR_G",
-                sel=quarter,
-                codes=tuple(
-                    tuple(g_codes[p][lo:lo + NOUT]) for p in range(packing.npath)
-                ),
-                stripe=stripe,
-            )
-
         for k_chunk in range(packing.n_kchunks):
             pair = k_chunk % 2
             lo = k_chunk * NIN
@@ -217,7 +206,18 @@ def schedule_fs(
                     stripe=stripe,
                 )
 
-        yield FsCommand(kind="DQ", stripe=stripe)
+        for group in range(G_WORDS):
+            lo = stripe * OUT_PER_STRIPE + group * NOUT
+            yield FsCommand(
+                kind="WR_G",
+                sel=group,
+                codes=tuple(
+                    tuple(g_codes[p][lo:lo + NOUT]) for p in range(packing.npath)
+                ),
+                group=group,
+                stripe=stripe,
+            )
+            yield FsCommand(kind="DQ", group=group, stripe=stripe)
 
 
 # ---------------------------------------------------------------------------
@@ -250,17 +250,19 @@ def slot_cost_base(n_kchunks: int, n_stripes: int) -> dict:
 def slot_cost_fs(n_kchunks: int, n_stripes: int, *, h_fmt: int = H_FMT_FP8) -> dict:
     """Column slots the full-scale schedule occupies.
 
-    The drain is one command plus the DRAIN_PORT_CYCLES the sequencer holds the
-    accumulator port, during which the bank cannot issue a column read. The
-    three pipeline stages behind it do not block anything and are not counted.
+    Each group uses one scale write, one drain command and
+    DRAIN_PORT_CYCLES of accumulator-port occupancy. The three pipeline stages
+    behind each group do not occupy the accumulator port.
     """
 
     per_chunk_writes = 2 if h_fmt == H_FMT_FP8 else 1 + NPATH
     write = per_chunk_writes * n_kchunks * n_stripes
     read = NGROUP * n_kchunks * n_stripes
     g_load = G_WORDS * n_stripes
-    drain_cmd = n_stripes
-    drain_stall = (DRAIN_PORT_CYCLES // CYCLES_PER_SLOT) * n_stripes
+    drain_cmd = G_WORDS * n_stripes
+    drain_stall = (
+        G_WORDS * (DRAIN_PORT_CYCLES // CYCLES_PER_SLOT) * n_stripes
+    )
     total = write + read + g_load + drain_cmd + drain_stall
     return {
         "write": write,
@@ -379,17 +381,12 @@ def accuracy_report(dout: int, din: int, seed: int = 0) -> dict:
 
     # ---- full-scale variant: bit-accurate, straight to binary16 -----------
     e0_fs = choose_e0_fs(x_codes, h_fp8)
-    model = PcuFsGolden(h_fmt=H_FMT_FP8, align_max=ALIGN_MAX)
+    model = PcuFsGolden(h_fmt=H_FMT_FP8, align_max=ALIGN_MAX, acc_w=27)
     model.e0 = e0_fs
     y_fs = [0.0] * dout
     n_kchunks = din // NIN
 
     for stripe in range(packing.n_stripes):
-        for quarter in range(G_WORDS):
-            lo = stripe * OUT_PER_STRIPE + quarter * NOUT
-            model.write_g(
-                quarter, [g_fp16[p][lo:lo + NOUT] for p in range(NPATH)]
-            )
         for k_chunk in range(n_kchunks):
             pair = k_chunk % 2
             lo = k_chunk * NIN
@@ -400,8 +397,13 @@ def accuracy_report(dout: int, din: int, seed: int = 0) -> dict:
             model.write_x(pair, x_codes[lo:lo + NIN])
             for out_group in range(NGROUP):
                 model.read(packing.word_at(stripe, k_chunk, out_group), out_group, pair)
-        for index, code in enumerate(model.dq_drain()):
-            y_fs[stripe * OUT_PER_STRIPE + index] = float(fp16_to_fraction(code))
+        for group in range(G_WORDS):
+            lo = stripe * OUT_PER_STRIPE + group * NOUT
+            model.write_g(
+                group, [g_fp16[p][lo:lo + NOUT] for p in range(NPATH)]
+            )
+            for index, code in enumerate(model.dq_drain(group)):
+                y_fs[lo + index] = float(fp16_to_fraction(code))
 
     return {
         "dout": dout,
@@ -447,7 +449,7 @@ def _self_test() -> int:
     if counts["RD"] != NGROUP * packing.n_kchunks:
         print(f"FAIL: RD count {counts['RD']}")
         return 1
-    if counts["WR_G"] != G_WORDS or counts["DQ"] != 1:
+    if counts["WR_G"] != G_WORDS or counts["DQ"] != G_WORDS:
         print(f"FAIL: per-stripe overhead {counts}")
         return 1
 

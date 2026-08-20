@@ -6,13 +6,13 @@
 #   ./run_all.sh power        power only (needs synthesis to have run)
 #   ./run_all.sh table        rebuild the table from existing results
 #
-# Every row is measured at the same arithmetic boundary: multipliers, adders,
-# and the accumulator are included; register files, buffers, control, and bank
-# interfaces are excluded. The HBM-PIM baseline is a SIMD row and uses one
-# binary32 accumulator per lane; every other row is P3-LLM-organized and keeps
-# its accumulator inside the processing elements.
+# Every row includes the arithmetic datapath and architectural accumulator.
+# External GRF/SRF storage, command memory and bank interfaces are excluded;
+# local sequencing and state that enable the measured dataflow remain in their
+# design-specific tops. The HBM-PIM baseline is a SIMD row and uses one
+# binary32 accumulator per lane.
 #
-# Each design family is measured along up to three axes, so the accumulator
+# Each design family is measured along up to four axes, so the accumulator
 # width is no longer the same on every row:
 #
 #   (1) base          32-bit fixed-point accumulation, raw integer output.
@@ -26,6 +26,9 @@
 #                     bfloat16 for AWQ, FP8-E4M3 for P3-LLM, binary16 for
 #                     RaBiT. The delta against (1) prices moving dequant off
 #                     the host.
+#   (4) dequant_requant
+#                     SpinQuant only: dequantization followed by UINT4
+#                     requantization, closing the W4A4 activation loop.
 #
 # Each axis lives in its own RTL directory with its own top module name, and
 # both of those are load-bearing: run_block_synth.sh writes generated/${TOP}.v
@@ -133,6 +136,7 @@ P3LLM_SOURCES=(
     "${RTL}/3_p3llm/p3llm_pcu.sv"
     "${RTL}/3_p3llm/p3llm_pe.sv"
     "${RTL}/3_p3llm/fixed_mul_shift.sv"
+    "${RTL}/3_p3llm/fixed_product_shift.sv"
     "${RTL}/3_p3llm/fp8_e4m3_decoder.sv"
     "${RTL}/3_p3llm/fp8_s0e4m4_decoder.sv"
     "${RTL}/3_p3llm/bitmod4_decoder.sv"
@@ -148,6 +152,7 @@ P3LLM_ACC16_SOURCES=(
     "${RTL}/3_p3llm_acc16/p3llm_pcu_acc16.sv"
     "${RTL}/3_p3llm_acc16/p3llm_pe.sv"
     "${RTL}/3_p3llm_acc16/fixed_mul_shift.sv"
+    "${RTL}/3_p3llm_acc16/fixed_product_shift.sv"
     "${RTL}/3_p3llm_acc16/fp8_e4m3_decoder.sv"
     "${RTL}/3_p3llm_acc16/fp8_s0e4m4_decoder.sv"
     "${RTL}/3_p3llm_acc16/bitmod4_decoder.sv"
@@ -164,6 +169,7 @@ P3LLM_DEQUANT_SOURCES=(
     "${RTL}/3_p3llm_dequant_rne/p3llm_pcu.sv"
     "${RTL}/3_p3llm_dequant_rne/p3llm_pe.sv"
     "${RTL}/3_p3llm_dequant_rne/fixed_mul_shift.sv"
+    "${RTL}/3_p3llm_dequant_rne/fixed_product_shift.sv"
     "${RTL}/3_p3llm_dequant_rne/fp8_e4m3_decoder.sv"
     "${RTL}/3_p3llm_dequant_rne/fp8_s0e4m4_decoder.sv"
     "${RTL}/3_p3llm_dequant_rne/bitmod4_decoder.sv"
@@ -190,7 +196,7 @@ RABIT_BASE_SOURCES=(
     "${RTL}/4_rabit/rabit_acc_regfile.sv"
     "${RTL}/4_rabit/rabit_pcu_ctrl.sv"
     "${RTL}/4_rabit/rabit_pcu_top.sv"
-    "${RTL}/4_rabit/rabit_pcu_synth.sv"
+    "${RTL}/4_rabit/rabit_pcu.sv"
 )
 
 # RaBiT axis 2. rtl/4_rabit_acc16 is a full copy of rtl/4_rabit whose only
@@ -207,7 +213,7 @@ RABIT_ACC16_SOURCES=(
     "${RTL}/4_rabit_acc16/rabit_acc_regfile.sv"
     "${RTL}/4_rabit_acc16/rabit_pcu_ctrl.sv"
     "${RTL}/4_rabit_acc16/rabit_pcu_top.sv"
-    "${RTL}/4_rabit_acc16/rabit_pcu_synth.sv"
+    "${RTL}/4_rabit_acc16/rabit_pcu_acc16.sv"
 )
 
 # SpinQuant W4A4. A pure integer dot-product engine: signed INT4 weights out of
@@ -226,7 +232,7 @@ SPINQUANT_SOURCES=(
     "${RTL}/5_spinquant/spinquant_pe.sv"
     "${RTL}/5_spinquant/spinquant_acc_regfile.sv"
     "${RTL}/5_spinquant/spinquant_pcu_top.sv"
-    "${RTL}/5_spinquant/spinquant_pcu_synth.sv"
+    "${RTL}/5_spinquant/spinquant_pcu.sv"
 )
 
 # SpinQuant axis 2: the accumulator narrowed to 16 bits, MSBs kept. The
@@ -238,7 +244,7 @@ SPINQUANT_ACC16_SOURCES=(
     "${RTL}/5_spinquant_acc16/spinquant_pe.sv"
     "${RTL}/5_spinquant_acc16/spinquant_acc_regfile.sv"
     "${RTL}/5_spinquant_acc16/spinquant_pcu_top.sv"
-    "${RTL}/5_spinquant_acc16/spinquant_pcu_acc16_synth.sv"
+    "${RTL}/5_spinquant_acc16/spinquant_pcu_acc16.sv"
 )
 
 # SpinQuant axis 3: the raw engine plus one shared dequantization pipe. Note
@@ -254,7 +260,7 @@ SPINQUANT_DQ_SOURCES=(
     "${RTL}/5_spinquant_dequant_rne/spinquant_dq_fixed32_float16_mul_pipe.sv"
     "${RTL}/5_spinquant_dequant_rne/spinquant_dq_fp32_pack_pipe.sv"
     "${RTL}/5_spinquant_dequant_rne/spinquant_pcu_dq_top.sv"
-    "${RTL}/5_spinquant_dequant_rne/spinquant_pcu_dq_synth.sv"
+    "${RTL}/5_spinquant_dequant_rne/spinquant_pcu_dq.sv"
 )
 
 # SpinQuant axis 4: the same plus the requantizer, so the output is the INT4 the
@@ -274,7 +280,7 @@ SPINQUANT_RQ_SOURCES=(
     "${RTL}/5_spinquant_dequant_requant/spinquant_rq_minmax.sv"
     "${RTL}/5_spinquant_dequant_requant/spinquant_rq_fp32_to_int4.sv"
     "${RTL}/5_spinquant_dequant_requant/spinquant_pcu_rq_top.sv"
-    "${RTL}/5_spinquant_dequant_requant/spinquant_pcu_rq_synth.sv"
+    "${RTL}/5_spinquant_dequant_requant/spinquant_pcu_rq.sv"
 )
 
 # label : top : clock period (ns) : source set
@@ -284,12 +290,9 @@ ROWS=(
     "int4bf16_pcu_top_pcu500 : int4bf16_pcu_top     : 2.0 : pcu16"
     "p3llm_pcu_500           : p3llm_pcu            : 2.0 : p3llm"
     "p3llm_pcu_dequant_500   : p3llm_pcu_dequant    : 2.0 : p3llm_dequant"
-    # Only the 250 MHz build is a table row. The 500 MHz build misses setup by
-    # 0.04 ns, and both share the top name rabit_pcu -- do_power writes one
-    # report per top, so listing both here would leave the 250 MHz row reading
-    # 500 MHz power. The 500 MHz point lives in run_rabit.sh with the rest of
-    # the sweep, which does not run power.
-    "rabit_pcu_250           : rabit_pcu            : 4.0 : rabit"
+    # The current RaBiT target row uses a 500-MHz constraint but misses setup;
+    # the timing-closed 250-MHz point remains in run_rabit.sh `all`.
+    "rabit_pcu_500           : rabit_pcu            : 2.0 : rabit"
     # tCCD_S, which is 2x the tCCD_L the HBM-PIM baseline row runs at. The
     # tCCD_L build is a sweep point in run_spinquant.sh, not a row here: both
     # share the top name spinquant_pcu and do_power writes one report per top.
@@ -303,9 +306,8 @@ ROWS=(
     "int4bf16_pcu32_acc16_500   : int4bf16_pcu32_acc16   : 2.0 : pcu8_acc16"
     "int4bf16_pcu_top_acc16_500 : int4bf16_pcu_top_acc16 : 2.0 : pcu16_acc16"
     "p3llm_pcu_acc16_500        : p3llm_pcu_acc16        : 2.0 : p3llm_acc16"
-    # RaBiT is measured at 250 MHz for the same reason the base row is: the
-    # 500 MHz build of the base variant misses setup on the convert path.
-    "rabit_pcu_acc16_250        : rabit_pcu_acc16        : 4.0 : rabit_acc16"
+    # RaBiT acc16 uses the same 500-MHz target as its base row and also misses setup.
+    "rabit_pcu_acc16_500        : rabit_pcu_acc16        : 2.0 : rabit_acc16"
     # SpinQuant keeps the MSBs rather than the LSBs: its accumulator holds an
     # exact integer dot product whose live value needs 22 bits at K = 14336, so
     # keeping the same LSB weight in 16 bits would cap the design at K = 273.
@@ -395,7 +397,6 @@ do_power() {
 
 do_table() {
     python3 "${HERE}/build_compute_table.py"
-    python3 "${HERE}/build_awq_report.py"
 }
 
 case "${1:-all}" in

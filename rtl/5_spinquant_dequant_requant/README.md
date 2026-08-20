@@ -92,11 +92,11 @@ axis-3의 binary16 pack을 기본값으로 유지한다. 이유 둘:
     ③ spinquant_pcu_dq   40,270.804 um2   31,707 cell   2,121 flop
     ④ spinquant_pcu_rq   39,996.824 um2   32,769 cell   2,260 flop
 
-로, ④가 cell 1,062개와 flop 139개를 더 쓰면서도 총 면적은 274 um2 더 작다. 둘 다
-WNS 0.09 ns / TNS 0 으로 타이밍을 여유 있게 만족하므로 타이밍 압력 때문이 아니라,
-netlist 가 커지자 ABC 가 평균적으로 더 싼 셀로 매핑했기 때문이다 (1.270 -> 1.221
+로, ④가 cell 1,062개와 flop 139개를 더 쓰면서도 총 면적은 274 um2 더 작다. ③/④
+모두 TNS 0이고 WNS는 각각 +0.17/+0.15 ns로 타이밍을 만족하므로 타이밍 압력
+때문이 아니라, netlist가 커지자 ABC가 평균적으로 더 싼 셀로 매핑했기 때문이다 (1.270 -> 1.221
 um2/cell). flat 합성에서 cross-boundary 최적화가 하는 일이고, 이 저장소가
-`spinquant_pcu_synth.sv` 의 blk 분해에 대해 이미 경고해 둔 것과 같은 현상이다.
+`spinquant_pcu.sv`와 block wrapper의 flat 합성 차이에 대해 이미 경고해 둔 것과 같은 현상이다.
 
 따라서 **requantizer 비용은 cell/flop 증분으로 말한다: +1,062 cell, +139 flop.**
 총 면적의 뺄셈은 이 규모에서 의미가 없다.

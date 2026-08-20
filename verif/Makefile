@@ -12,8 +12,7 @@
 RTL   := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../rtl)
 VERIF := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-# 논문 5개 행을 모두 덮는다: baseline lane, awq PCU, p3llm PCU, rabit PCU,
-# spinquant PCU.
+# 다섯 설계군과 현재 acc16/dequant/requant 변형을 모두 덮는다.
 TESTS := fp16_mul \
          pcu_bf16_32 pcu_fp16_32 pcu_bf16_64 \
          pcu_bf16_32_acc16 pcu_fp16_32_acc16 pcu_bf16_64_acc16 \
@@ -21,7 +20,7 @@ TESTS := fp16_mul \
          rabit_cvt rabit_align rabit_pe rabit_acc \
          rabit_pcu rabit_pcu_m10 rabit_pcu_noshift rabit_pcu_m10_noshift \
          rabit_pcu_acc16 \
-         rabit_fs rabit_fs_pipe rabit_fs_h16 \
+         rabit_fs \
          p3llm_dequant_arith p3llm_dequant \
          awq_dequant_arith pcu_bf16_32_dq pcu_bf16_64_dq \
          spinquant_pe spinquant_acc \
@@ -74,10 +73,8 @@ endif
 # 나뉘어 있고 각자 int4float_pcu/pe/align 사본을 들고 있다. 따라서 한 번에 한쪽
 # 디렉토리만 컴파일한다. 두 벌을 함께 넣으면 세 모듈이 중복 정의된다.
 #
-# 이제 두 빌드 모두 v2 계약이다: `i_weight_zp` 이 PE 당 독립 4-bit
-# (NUM_PES*4 bit) 이며, v1 broadcast nibble 빌드는 트리에서 삭제됐다.
-# testbench 는 PCU_ZP_PER_PE 로 계약을 받아 stimulus 와 golden model 을 함께
-# 맞추는데, 양쪽 계약을 모두 지원하므로 상수 1 을 주면 된다.
+# 두 빌드 모두 `i_weight_zp`이 PE당 독립 4-bit (`NUM_PES*4` bit)인 현재
+# 계약만 사용한다.
 
 PCU8_DIR  := $(RTL)/2_awq_p3llm_8pe_v2
 PCU16_DIR := $(RTL)/2_awq_p3llm_16pe_v2
@@ -93,7 +90,6 @@ MODULE          := test_int4float_pcu
 PCU_IS_8PE      := $(findstring _32,$(TEST))
 PCU_IS_ACC16    := $(findstring acc16,$(TEST))
 PCU_NUM_PES     := $(if $(PCU_IS_8PE),8,16)
-PCU_ZP_PER_PE   := 1
 PCU_FMT         := $(if $(findstring fp16,$(TEST)),fp16,bf16)
 PCU_SUFFIX      := $(if $(PCU_IS_8PE),pcu32,pcu_top)
 # acc16 keeps the same PE count and format but narrows the accumulator. The
@@ -111,7 +107,7 @@ VERILOG_SOURCES := $(PCU_DIR)/compressor_4to2.sv \
                    $(PCU_DIR)/int4float_pe.v \
                    $(PCU_DIR)/int4float_pcu.v \
                    $(PCU_DIR)/$(COCOTB_TOPLEVEL).v
-export PCU_NUM_PES PCU_ZP_PER_PE PCU_FMT PCU_ACC_W PCU_ACC_RSH
+export PCU_NUM_PES PCU_FMT PCU_ACC_W PCU_ACC_RSH
 endif
 
 # --- P3-LLM: decoders, compressor, PE, and the whole PCU ------------------
@@ -126,6 +122,7 @@ P3LLM_RTL := $(RTL)/3_p3llm/p3llm_pkg.sv \
              $(RTL)/3_p3llm/bitmod4_decoder.sv \
              $(RTL)/3_p3llm/int4_asym_decoder.sv \
              $(RTL)/3_p3llm/fixed_mul_shift.sv \
+             $(RTL)/3_p3llm/fixed_product_shift.sv \
              $(RTL)/3_p3llm/compressor_4to2.sv \
              $(RTL)/3_p3llm/p3llm_pe.sv
 
@@ -176,6 +173,7 @@ P3LLM_ACC16_RTL := $(RTL)/3_p3llm_acc16/p3llm_pkg.sv \
                    $(RTL)/3_p3llm_acc16/bitmod4_decoder.sv \
                    $(RTL)/3_p3llm_acc16/int4_asym_decoder.sv \
                    $(RTL)/3_p3llm_acc16/fixed_mul_shift.sv \
+                   $(RTL)/3_p3llm_acc16/fixed_product_shift.sv \
                    $(RTL)/3_p3llm_acc16/compressor_4to2.sv \
                    $(RTL)/3_p3llm_acc16/p3llm_pe.sv \
                    $(RTL)/3_p3llm_acc16/p3llm_pcu_acc16.sv
@@ -198,6 +196,7 @@ P3LLM_DEQUANT_RTL := $(P3LLM_DEQUANT_DIR)/p3llm_pkg.sv \
                      $(P3LLM_DEQUANT_DIR)/bitmod4_decoder.sv \
                      $(P3LLM_DEQUANT_DIR)/int4_asym_decoder.sv \
                      $(P3LLM_DEQUANT_DIR)/fixed_mul_shift.sv \
+                     $(P3LLM_DEQUANT_DIR)/fixed_product_shift.sv \
                      $(P3LLM_DEQUANT_DIR)/compressor_4to2.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_pe.sv \
                      $(P3LLM_DEQUANT_DIR)/p3llm_pcu.sv \
@@ -324,7 +323,7 @@ RABIT_MANT_W      := $(if $(findstring m10,$(TEST)),10,12)
 RABIT_SHIFTER_EN  := $(if $(findstring noshift,$(TEST)),0,1)
 RABIT_ACC_W       := 32
 RABIT_SHIFT_RND   := 0
-VERILOG_SOURCES   := $(RABIT_RTL) $(RTL)/4_rabit/rabit_pcu_synth.sv
+VERILOG_SOURCES   := $(RABIT_RTL) $(RTL)/4_rabit/$(TEST).sv
 EXTRA_ARGS        += --assert -DRABIT_ASSERTIONS
 export RABIT_MANT_W RABIT_SHIFTER_EN RABIT_ACC_W RABIT_SHIFT_RND
 endif
@@ -342,7 +341,7 @@ RABIT_ACC16_RTL := $(RTL)/4_rabit_acc16/rabit_compressor_4to2.sv \
                    $(RTL)/4_rabit_acc16/rabit_acc_regfile.sv \
                    $(RTL)/4_rabit_acc16/rabit_pcu_ctrl.sv \
                    $(RTL)/4_rabit_acc16/rabit_pcu_top.sv \
-                   $(RTL)/4_rabit_acc16/rabit_pcu_synth.sv
+                   $(RTL)/4_rabit_acc16/rabit_pcu_acc16.sv
 
 ifeq ($(TEST),rabit_pcu_acc16)
 MODULE            := test_rabit_pcu
@@ -366,7 +365,7 @@ RABIT_SHIFT_RND   := 1
 # every depth -- status_sticky[0] reports the saturation and check_sticky
 # compares it -- so this is a property of the design point, not a defect. It is
 # the accuracy side of the area saving this row exists to measure, and it is
-# why the acc16 axis needs the accuracy sweep the extension plan leaves open.
+# why the acc16 axis still needs a workload-level accuracy sweep.
 RABIT_GEMV_DIN    := 1024
 VERILOG_SOURCES   := $(RABIT_ACC16_RTL)
 EXTRA_ARGS        += --assert -DRABIT_ASSERTIONS
@@ -375,33 +374,24 @@ endif
 
 # --- RaBiT full-scale PCU -------------------------------------------------
 #
-# rtl/4_rabit holds the base variant and rtl/4_rabit_dequant_rne the full-scale
-# one, which is RaBiT's axis-3 design point. The full-scale top reuses the base
-# modules rather than copying them, so both directories are compiled together
-# and sv2v/Verilator see one definition of each shared module. The test names
-# (rabit_fs*) and the top names (rabit_pcu_fs*) keep the historical `fs`
-# spelling: verif/models/rabit_fs_model.py, synth/build_rabit_fs_report.py and
-# the results/ artefact names all key off them. rabit_fs_h16 is the same design
-# with H_FMT = FP16_3WR, which changes the write schedule -- the testbench's
-# stimulus generator picks it up from RABIT_FS_H_FMT.
-
-RABIT_BASE_RTL := $(RTL)/4_rabit/rabit_compressor_4to2.sv \
-                  $(RTL)/4_rabit/rabit_align_shift.sv \
-                  $(RTL)/4_rabit/rabit_pe.sv \
-                  $(RTL)/4_rabit/rabit_cvt_fp16_blk.sv \
-                  $(RTL)/4_rabit/rabit_acc_regfile.sv \
-                  $(RTL)/4_rabit/rabit_pcu_ctrl.sv
-
-RABIT_FS_RTL := $(RABIT_BASE_RTL) \
+# The directory is self-contained: shared RaBiT blocks are copied locally, so
+# this test never pulls a module definition from rtl/4_rabit.
+RABIT_FS_RTL := $(RTL)/4_rabit_dequant_rne/rabit_compressor_4to2.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_cvt_fp16_blk.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_align_shift.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_pe.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_acc_regfile.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_pcu_ctrl.sv \
                 $(RTL)/4_rabit_dequant_rne/rabit_fs_fp16_pack.sv \
                 $(RTL)/4_rabit_dequant_rne/rabit_fs_h_scale_unit.sv \
-                $(RTL)/4_rabit_dequant_rne/rabit_fs_g_buffer.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_g_group_buffer.sv \
                 $(RTL)/4_rabit_dequant_rne/rabit_fs_dq_lane.sv \
                 $(RTL)/4_rabit_dequant_rne/rabit_fs_dq_add.sv \
                 $(RTL)/4_rabit_dequant_rne/rabit_fs_dq_unit.sv \
-                $(RTL)/4_rabit_dequant_rne/rabit_fs_drain_seq.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_group_drain_seq.sv \
                 $(RTL)/4_rabit_dequant_rne/rabit_pcu_fs_top.sv \
-                $(RTL)/4_rabit_dequant_rne/rabit_pcu_fs_synth.sv
+                $(RTL)/4_rabit_dequant_rne/rabit_fs_y_pack1to4.sv \
+                $(RTL)/4_rabit_dequant_rne/rabit_pcu_fs.sv
 
 ifeq ($(TEST),rabit_fs)
 COCOTB_TOPLEVEL := rabit_pcu_fs
@@ -409,25 +399,14 @@ MODULE          := test_rabit_fs_pcu
 VERILOG_SOURCES := $(RABIT_FS_RTL)
 EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS -DRABIT_FS_ASSERTIONS
 RABIT_FS_H_FMT  := 0
-export RABIT_FS_H_FMT
-endif
-
-ifeq ($(TEST),rabit_fs_pipe)
-COCOTB_TOPLEVEL := rabit_pcu_fs_p
-MODULE          := test_rabit_fs_pcu
-VERILOG_SOURCES := $(RABIT_FS_RTL)
-EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS -DRABIT_FS_ASSERTIONS
-RABIT_FS_H_FMT  := 0
-export RABIT_FS_H_FMT
-endif
-
-ifeq ($(TEST),rabit_fs_h16)
-COCOTB_TOPLEVEL := rabit_pcu_fs_h16
-MODULE          := test_rabit_fs_pcu
-VERILOG_SOURCES := $(RABIT_FS_RTL)
-EXTRA_ARGS      += --assert -DRABIT_ASSERTIONS -DRABIT_FS_ASSERTIONS
-RABIT_FS_H_FMT  := 1
-export RABIT_FS_H_FMT
+RABIT_FS_NOUT      := 8
+RABIT_FS_DQ_LANES  := 1
+RABIT_FS_OUT_LANES := 4
+RABIT_FS_MANT_W    := 12
+RABIT_FS_RD_CYCLES := 2
+RABIT_FS_ACC_W     := 27
+export RABIT_FS_H_FMT RABIT_FS_NOUT RABIT_FS_DQ_LANES
+export RABIT_FS_OUT_LANES RABIT_FS_MANT_W RABIT_FS_RD_CYCLES RABIT_FS_ACC_W
 endif
 
 # --- SpinQuant W4A4: PE, accumulator file, whole PCU -----------------------
@@ -487,7 +466,7 @@ VERILOG_SOURCES := $(RTL)/5_spinquant_acc16/spinquant_compressor_4to2.sv \
                    $(RTL)/5_spinquant_acc16/spinquant_pe.sv \
                    $(RTL)/5_spinquant_acc16/spinquant_acc_regfile.sv \
                    $(RTL)/5_spinquant_acc16/spinquant_pcu_top.sv \
-                   $(RTL)/5_spinquant_acc16/spinquant_pcu_acc16_synth.sv
+                   $(RTL)/5_spinquant_acc16/spinquant_pcu_acc16.sv
 EXTRA_ARGS      += --assert -DSPINQUANT_ASSERTIONS
 export SPINQUANT_W_LATCH SPINQUANT_ACC_W SPINQUANT_ACC_CHAIN_W SPINQUANT_ACC_RSH
 export SPINQUANT_NPE SPINQUANT_NROW SPINQUANT_NENTRY
@@ -518,7 +497,7 @@ VERILOG_SOURCES := $(SPINQUANT_DQ_DIR)/spinquant_compressor_4to2.sv \
                    $(SPINQUANT_DQ_DIR)/spinquant_dq_fixed32_float16_mul_pipe.sv \
                    $(SPINQUANT_DQ_DIR)/spinquant_dq_fp32_pack_pipe.sv \
                    $(SPINQUANT_DQ_DIR)/spinquant_pcu_dq_top.sv \
-                   $(SPINQUANT_DQ_DIR)/spinquant_pcu_dq_synth.sv
+                   $(SPINQUANT_DQ_DIR)/spinquant_pcu_dq.sv
 endif
 
 ifeq ($(TEST),spinquant_pcu_rq)
@@ -534,7 +513,7 @@ VERILOG_SOURCES := $(SPINQUANT_RQ_DIR)/spinquant_compressor_4to2.sv \
                    $(SPINQUANT_RQ_DIR)/spinquant_rq_minmax.sv \
                    $(SPINQUANT_RQ_DIR)/spinquant_rq_fp32_to_int4.sv \
                    $(SPINQUANT_RQ_DIR)/spinquant_pcu_rq_top.sv \
-                   $(SPINQUANT_RQ_DIR)/spinquant_pcu_rq_synth.sv
+                   $(SPINQUANT_RQ_DIR)/spinquant_pcu_rq.sv
 EXTRA_ARGS      += --assert
 endif
 
@@ -547,7 +526,7 @@ SPINQUANT_NPE         := $(if $(findstring w512,$(TEST)),32,16)
 SPINQUANT_NROW        := $(if $(findstring _r2,$(TEST)),2,$(if $(findstring _r4,$(TEST)),4,1))
 SPINQUANT_NENTRY      := $(if $(findstring r2e2,$(TEST)),2,4)
 VERILOG_SOURCES       := $(SPINQUANT_RTL) \
-                         $(RTL)/5_spinquant/spinquant_pcu_synth.sv
+                         $(RTL)/5_spinquant/$(TEST).sv
 EXTRA_ARGS            += --assert -DSPINQUANT_ASSERTIONS
 export SPINQUANT_W_LATCH SPINQUANT_ACC_CHAIN_W
 export SPINQUANT_NPE SPINQUANT_NROW SPINQUANT_NENTRY

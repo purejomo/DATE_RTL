@@ -5,21 +5,17 @@
 //     y[j] = fp16( g_1[j]*A_1[j] + g_2[j]*A_2[j] ),
 //     A_p[j] = acc_p[j] * 2**(E0 - 14 - MANT_W)
 //
-// Organization. The accumulator file has one read port and one write port, both
-// slot granular, and a slot is one path of one output group -- NOUT_PER_WORD
-// accumulators. So a cycle can see one path of NOUT_PER_WORD outputs, not both
-// paths of one output. The unit is therefore DQ_LANES lanes wide across the
-// output axis and serializes the path axis:
+// The accumulator file exposes one path of one output group per cycle. The
+// unit is DQ_LANES wide across outputs and serializes the two paths. The drain
+// order is half then path, so path 0 is consumed immediately by path 1:
 //
 //     cycle 0   slot (group, path 0), outputs 0 .. DQ_LANES-1     -> partial
-//     cycle 1   slot (group, path 0), outputs DQ_LANES .. 2*DQ-1  -> partial
-//     cycle 2   slot (group, path 1), outputs 0 .. DQ_LANES-1     -> y beat
-//     cycle 3   slot (group, path 1), outputs DQ_LANES .. 2*DQ-1  -> y beat
+//     cycle 1   slot (group, path 1), outputs 0 .. DQ_LANES-1     -> result
+//     cycle 2   slot (group, path 0), next DQ_LANES outputs        -> partial
+//     cycle 3   slot (group, path 1), next DQ_LANES outputs        -> result
 //
-// which is NPATH * NHALF = 4 cycles per group and NGROUP * 4 = 16 cycles for the
-// 32 outputs of a stripe, at an average of two finished outputs per cycle. The
-// price of the single read port is one partial register bank
-// (NHALF x DQ_LANES products) and DQ_LANES adders instead of DQ_LANES/2.
+// The final DQ_LANES=1 build uses 16 accumulator-port cycles per group. Only
+// one output's path-0 product is parked.
 //
 // Pipeline, three stages, one result per cycle:
 //
@@ -27,9 +23,8 @@
 //     S1  add       align the two paths and add, or park the path-0 product
 //     S2  pack      normalize the sum and round to binary16
 //
-// Only S1 and S2 do work on a path-1 cycle, so a y beat appears every other
-// cycle carrying DQ_LANES outputs, which is exactly the 16b x DQ_LANES output
-// port. The three-cycle latency is a tail on the drain, not a throughput cost.
+// A result appears every other cycle. The three-cycle pipeline latency is a
+// tail and does not occupy the accumulator port.
 module rabit_fs_dq_unit #(
     parameter int NOUT_PER_WORD = 8,
     parameter int NPATH         = 2,
@@ -42,8 +37,8 @@ module rabit_fs_dq_unit #(
     // derived; do not override
     parameter int NHALF         = NOUT_PER_WORD / DQ_LANES,
     parameter int HW            = (NHALF > 1) ? $clog2(NHALF) : 1,
-    parameter int QW            = (MANT_W + 1) + 11,
-    parameter int FW            = 10,
+    parameter int QW            = MANT_W + 11,
+    parameter int FW            = 8,
     parameter int MAG_W         = QW + ALIGN_MAX + 1,
     parameter int EXPO_W        = FW + 1
 ) (
@@ -143,22 +138,21 @@ module rabit_fs_dq_unit #(
     // =====================================================================
     // S1: park path 0, or align and add path 1 against the parked partial
     // =====================================================================
-    logic [DQ_LANES-1:0]    p_sign_q [0:NHALF-1];
-    logic [DQ_LANES*QW-1:0] p_q_q    [0:NHALF-1];
-    logic [DQ_LANES*FW-1:0] p_f_q    [0:NHALF-1];
+    // The optimized sequencer presents path 0 immediately followed by path 1
+    // for each output half, so only one half's partial needs to be parked.
+    logic [DQ_LANES-1:0]    p_sign_q;
+    logic [DQ_LANES*QW-1:0] p_q_q;
+    logic [DQ_LANES*FW-1:0] p_f_q;
 
-    integer ph;
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            for (ph = 0; ph < NHALF; ph = ph + 1) begin
-                p_sign_q[ph] <= {DQ_LANES{1'b0}};
-                p_q_q[ph]    <= {(DQ_LANES*QW){1'b0}};
-                p_f_q[ph]    <= {(DQ_LANES*FW){1'b0}};
-            end
+            p_sign_q <= {DQ_LANES{1'b0}};
+            p_q_q    <= {(DQ_LANES*QW){1'b0}};
+            p_f_q    <= {(DQ_LANES*FW){1'b0}};
         end else if (s0_valid_q && !s0_path_q) begin
-            p_sign_q[s0_half_q] <= s0_sign_q;
-            p_q_q[s0_half_q]    <= s0_q_q;
-            p_f_q[s0_half_q]    <= s0_f_q;
+            p_sign_q <= s0_sign_q;
+            p_q_q    <= s0_q_q;
+            p_f_q    <= s0_f_q;
         end
     end
 
@@ -173,9 +167,9 @@ module rabit_fs_dq_unit #(
                 .FW        (FW),
                 .ALIGN_MAX (ALIGN_MAX)
             ) u_add (
-                .s1_i      (p_sign_q[s0_half_q][l]),
-                .q1_i      (p_q_q[s0_half_q][l*QW +: QW]),
-                .f1_i      (p_f_q[s0_half_q][l*FW +: FW]),
+                .s1_i      (p_sign_q[l]),
+                .q1_i      (p_q_q[l*QW +: QW]),
+                .f1_i      (p_f_q[l*FW +: FW]),
                 .s2_i      (s0_sign_q[l]),
                 .q2_i      (s0_q_q[l*QW +: QW]),
                 .f2_i      (s0_f_q[l*FW +: FW]),

@@ -59,12 +59,13 @@ from rabit_model import (  # noqa: F401  (re-exported for the tests)
 # geometry, mirroring the RTL defaults
 # ---------------------------------------------------------------------------
 
-DQ_LANES = 4
+DQ_LANES = 1
 ALIGN_MAX = 16
 NOUT_STRIPE = NGROUP * NOUT_PER_WORD          # 32 outputs resident per stripe
 NHALF = NOUT_PER_WORD // DQ_LANES
-DRAIN_CYCLES = NGROUP * NPATH * NHALF         # accumulator-port cycles per drain
-G_WORDS = (NOUT_STRIPE * NPATH * 16) // 256   # 256-bit writes to fill g_buffer
+GROUP_DRAIN_CYCLES = NPATH * NHALF             # cycles for one 8-output group
+DRAIN_CYCLES = NGROUP * GROUP_DRAIN_CYCLES     # cycles for a whole stripe
+G_WORDS = NGROUP                               # one 256-bit scale word per group
 
 H_FMT_FP8 = 0
 H_FMT_FP16 = 1
@@ -188,15 +189,22 @@ def pack_fp16_word(codes: Sequence[int]) -> int:
     return word
 
 
-def pack_g_word(g_paths: Sequence[Sequence[int]], quarter: int) -> int:
-    """One quarter of the g table: bit[j_local*32 + p*16 +: 16].
+def pack_g_word(
+    g_paths: Sequence[Sequence[int]],
+    quarter: int,
+    *,
+    nout: int = NOUT_PER_WORD,
+) -> int:
+    """One physical g word: bit[j_local*32 + p*16 +: 16].
 
-    ``g_paths[p][j]`` is indexed by the output's position inside the stripe.
+    ``nout`` is the number of outputs carried by the 256-bit write, not the
+    number of PEs. It is eight for two residual paths, including the 4-PE top.
+    ``g_paths[p][j]`` is indexed by output position in this packed slice.
     """
 
     word = 0
-    for j_local in range(NOUT_PER_WORD):
-        j = quarter * NOUT_PER_WORD + j_local
+    for j_local in range(nout):
+        j = quarter * nout + j_local
         for p in range(NPATH):
             word |= (g_paths[p][j] & 0xFFFF) << (j_local * (NPATH * 16) + p * 16)
     return word
@@ -304,7 +312,7 @@ def h_scale_chunk(
 # rabit_fs_dq_lane / rabit_fs_dq_add
 # ---------------------------------------------------------------------------
 
-FW = 10
+FW = 8
 F_ZERO = -(1 << (FW - 1))
 
 
@@ -397,7 +405,7 @@ def dequantize_output(
 ) -> tuple[int, bool]:
     """The whole drain datapath for one output. -> (binary16 code, saturated)."""
 
-    qw = (mant_w + 1) + 11
+    qw = mant_w + 11
     lane1 = dq_lane(acc1, g1_code, e0, mant_w=mant_w)
     lane2 = dq_lane(acc2, g2_code, e0, mant_w=mant_w)
     sign, mag, exp_lsb = dq_add(lane1, lane2, qw=qw, align_max=align_max)
@@ -414,14 +422,14 @@ class PcuFsGolden(PcuGolden):
     """Transaction-level model of rabit_pcu_fs_top.
 
     Inherits the accumulator array, the PE and the raw drain from ``PcuGolden``
-    and adds the h latch, the g buffer and the dequantizing drain. Commands
+    and adds the h latch, one-group g buffer and the dequantizing drain. Commands
     mirror the RTL's write kinds:
 
         write_h  one 256-bit FP8 chunk (or one binary16 vector when h_fmt = 1)
         write_x  one 256-bit binary16 chunk, expands to NPATH GRF entries
-        write_g  one quarter of the stripe's g table
+        write_g  the selected output group's g table
         read     unchanged from the base variant
-        dq_drain the whole stripe, returning NOUT_STRIPE binary16 codes
+        dq_drain one group, returning NOUT_PER_WORD binary16 codes
     """
 
     h_fmt: int = H_FMT_FP8
@@ -429,14 +437,14 @@ class PcuFsGolden(PcuGolden):
 
     h_latch: list = field(default_factory=list)
     g_buffer: list = field(default_factory=list)
-    g_filled: set = field(default_factory=set)
+    g_group: int | None = None
     fs_sticky: int = 0
 
     def __post_init__(self) -> None:
         super().__post_init__()
         self.h_latch = [None] * (1 if self.h_fmt == H_FMT_FP8 else self.npath)
-        self.g_buffer = [[0] * (self.ngroup * self.nout) for _ in range(self.npath)]
-        self.g_filled = set()
+        self.g_buffer = [[0] * self.nout for _ in range(self.npath)]
+        self.g_group = None
         self.fs_sticky = 0
 
     # -- state ------------------------------------------------------------
@@ -446,7 +454,7 @@ class PcuFsGolden(PcuGolden):
 
     @property
     def g_loaded(self) -> bool:
-        return len(self.g_filled) == G_WORDS
+        return self.g_group is not None
 
     # -- commands ---------------------------------------------------------
     def write_h(self, codes, sel: int = 0) -> None:
@@ -489,47 +497,50 @@ class PcuFsGolden(PcuGolden):
             blocks.append(super().write(pair * self.npath + path, u_codes))
         return blocks
 
-    def write_g(self, quarter: int, g_paths: Sequence[Sequence[int]]) -> None:
-        """WR_G. ``g_paths[p]`` is NOUT_PER_WORD codes for this quarter."""
+    def write_g(self, group: int, g_paths: Sequence[Sequence[int]]) -> None:
+        """WR_G. ``g_paths[p]`` contains one physical 256-bit word's codes."""
 
-        if quarter == 0:
-            self.g_filled = set()
-        self.g_filled.add(quarter)
+        if not 0 <= group < self.ngroup:
+            raise ValueError(f"output group {group} out of range")
+        self.g_group = group
+        nword_out = len(g_paths[0])
+        if nword_out != self.nout:
+            raise ValueError(f"g group needs {self.nout} outputs per path")
+        if any(len(path) != nword_out for path in g_paths):
+            raise ValueError("all g paths must carry the same number of outputs")
         for p in range(self.npath):
-            for j_local in range(self.nout):
-                self.g_buffer[p][quarter * self.nout + j_local] = g_paths[p][j_local]
+            for j_local in range(nword_out):
+                self.g_buffer[p][j_local] = g_paths[p][j_local]
 
-    def dq_drain(self) -> list[int]:
-        """Drain the whole stripe through the dequantizer, clearing as it goes.
+    def dq_drain(self, group: int) -> list[int]:
+        """Drain one group through the dequantizer, clearing it as it goes.
 
-        Returns NOUT_STRIPE binary16 codes in output order, which is also the
-        order the y beats leave the RTL: beat b carries outputs
-        b*DQ_LANES .. b*DQ_LANES + DQ_LANES - 1.
+        The group scale word is loaded just before this command. This is the
+        area-saving dataflow used by the final RTL: only 256 scale bits are
+        resident instead of a full 1024-bit stripe table.
         """
 
-        if not self.g_loaded:
+        if not self.g_loaded or self.g_group != group:
             self.fs_sticky |= 0b1000
 
         out: list[int] = []
-        for group in range(self.ngroup):
-            for j_local in range(self.nout):
-                j = group * self.nout + j_local
-                acc1 = self.accumulators[group * self.npath + 0][j_local]
-                acc2 = self.accumulators[group * self.npath + 1][j_local]
-                code, sat = dequantize_output(
-                    acc1,
-                    acc2,
-                    self.g_buffer[0][j],
-                    self.g_buffer[1][j],
-                    self.e0,
-                    mant_w=self.mant_w,
-                    align_max=self.align_max,
-                )
-                if sat:
-                    self.fs_sticky |= 0b0100
-                out.append(code)
-            for path in range(self.npath):
-                self.accumulators[group * self.npath + path] = [0] * self.nout
+        for j_local in range(self.nout):
+            acc1 = self.accumulators[group * self.npath + 0][j_local]
+            acc2 = self.accumulators[group * self.npath + 1][j_local]
+            code, sat = dequantize_output(
+                acc1,
+                acc2,
+                self.g_buffer[0][j_local],
+                self.g_buffer[1][j_local],
+                self.e0,
+                mant_w=self.mant_w,
+                align_max=self.align_max,
+            )
+            if sat:
+                self.fs_sticky |= 0b0100
+            out.append(code)
+        for path in range(self.npath):
+            self.accumulators[group * self.npath + path] = [0] * self.nout
         return out
 
 

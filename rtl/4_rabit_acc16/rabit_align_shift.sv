@@ -19,8 +19,9 @@
 // SHIFT_RND is off by default, which is the specified behaviour: the right
 // shift truncates toward -inf like any arithmetic shift. Turning it on adds
 // round-to-nearest-even on the discarded bits, which removes the -0.5 LSB per
-// chunk bias that truncation accumulates over a long k sweep. It is reported in
-// docs/rabit_pcu_spec.md as a proposal, not as part of the delivered default.
+// chunk bias that truncation accumulates over a long k sweep. The reusable
+// module defaults to truncation, while the acc16 synthesis wrapper overrides
+// SHIFT_RND=1 as part of that design point's numeric contract.
 module rabit_align_shift #(
     parameter int PSUM_W    = 17,
     parameter int ACC_W     = 32,

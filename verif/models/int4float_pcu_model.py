@@ -12,9 +12,8 @@ IEEE result. It mirrors `int4float_align.v` and `int4float_pe.v`
 statement for statement.
 
 The zero point is per output PE: AutoAWQ stores one zero point per output
-channel and group, so `transaction` takes either one nibble (the v1 broadcast
-contract, which no RTL in the tree implements any more) or one nibble per PE
-(the v2 contract both AWQ builds now use).
+channel and group, so `transaction` takes one nibble per PE, matching every
+AWQ RTL top in this repository.
 
 `PcuModel` also covers the acc16 axis. With `acc_bits=16` the 4-lane partial
 sum is rounded to nearest, ties to even, by `acc_rsh` bits before it is
@@ -175,7 +174,7 @@ class PcuModel:
         self,
         activations: list[int],
         weights: list[list[int]],
-        zero_point: int | list[int],
+        zero_point: list[int],
         ref_exp: int,
         *,
         acc_clear: bool,
@@ -186,10 +185,7 @@ class PcuModel:
         if len(weights) != self.num_pes:
             raise ValueError(f"expected {self.num_pes} weight groups")
 
-        # One nibble broadcasts to every PE (v1); a list gives each PE its own
-        # zero point (v2). Both spellings decode identically per PE.
-        zero_points = ([zero_point] * self.num_pes
-                       if isinstance(zero_point, int) else list(zero_point))
+        zero_points = list(zero_point)
         if len(zero_points) != self.num_pes:
             raise ValueError(f"expected {self.num_pes} zero points")
 

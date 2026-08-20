@@ -1,4 +1,0 @@
-
-18. Executing CHECK pass (checking for obvious problems).
-Checking module rabit_fs_blk_hscale...
-Found and reported 0 problems.

@@ -35,7 +35,7 @@
 // e0_i. The PE then needs no barrel shifter, at the cost of flushing every
 // entry below e0_i and saturating every lane above it (ovf_o).
 //
-// TODO(spec): binary16 codes with exp == 31 (infinity, NaN) are not special
+// Numeric contract: binary16 codes with exp == 31 (infinity, NaN) are not special
 // cased -- they decode as ordinary numbers with e_eff = 31. u is an NPU-computed
 // product of finite tensors, so the format the PCU consumes has no infinities
 // and special-casing them would cost area for nothing. Confirm this is

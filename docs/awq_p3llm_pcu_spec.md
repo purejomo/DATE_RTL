@@ -11,8 +11,7 @@ Bank-attached PIM 연산기. AutoAWQ W4G128 weight 와 16-bit float activation �
 - Golden model: [verif/models/int4float_pcu_model.py](../verif/models/int4float_pcu_model.py)
 - 회귀: `cd verif && make TEST=pcu_bf16_32` (전체는 `make`)
 - 합성: `cd synth && ./run_all.sh synth`
-- 면적·타이밍 리포트:
-  [results/designs/awq_p3llm_v2_area_report.md](../results/designs/awq_p3llm_v2_area_report.md)
+- 면적: [results/area.csv](../results/area.csv), 타이밍: `results/reports/int4bf16_*`
 
 한 줄 요약: **v2 가 v1 과 다른 것은 zero-point 팬아웃 하나뿐이다.** 산술, 파이프
 라인 4단, 누산기 폭, II=1, 소프트웨어가 정하는 block exponent 는 전부 그대로다.
@@ -39,8 +38,9 @@ W̃ · a = s · Σ (W_q - z) · a
 ```
 
 - `(W_q - z)` 는 **PCU 안**에서 계산한다 (`int4_asym_decode`).
-- `s` (group scale) 와 output-group reduction, 최종 BF16 packing 은 **PCU 밖**
-  functional postprocess 다. 이 경계는 v1 과 같다.
+- 축①·②에서는 `s` 적용, output-group reduction, 최종 BF16 packing이 **PCU 밖**
+  functional postprocess다. 축③은 group scale 적용과 BF16/binary16 packing을
+  PCU 안으로 옮긴다.
 
 ### 1.2 v1 → v2 가 바꾼 것
 
@@ -69,9 +69,8 @@ metadata 배치를 구현하지 않는다.
 | block-float 정렬, `(W_q - z)` 디코드, 32 곱, 누산 | **PCU** |
 | group scale `s` 적용, output-group reduction, BF16 packing | NPU (functional postprocess) |
 
-마지막 행은 정확도 계산에는 반영하지만 **GPU kernel latency/PPA 측정은 하지
-않는다** (EXTENSION). 따라서 이 설계는 GPU postprocess 가속기나 end-to-end CUDA
-bit-exact 를 주장하지 않는다.
+마지막 행은 축①·②의 면적과 지연에 포함되지 않는다. 따라서 두 축은
+postprocess 가속기나 end-to-end CUDA bit-exact를 주장하지 않는다.
 
 **이 표는 축① (base) 의 역할 분담이다.** 축③ (`*_dequant_rne`) 은 마지막 행의
 group scale 적용과 BF16 packing 을 PCU 안으로 옮긴다 — §1.4 참고.
@@ -264,7 +263,7 @@ output [3:0] o_status_sticky   // [0] invalid [1] overflow [2] underflow [3] pro
 두 판 모두 `i_weight_zp` 이 PE 당 독립 4-bit 이다 (8 PE 32 bit, 16 PE 64 bit).
 v1 broadcast nibble 빌드는 트리에서 삭제했다.
 
-다섯 디렉토리는 각자 `int4float_pcu/pe/align` 사본을 들고 있으므로 **어느 둘을
+여섯 디렉토리는 각자 `int4float_pcu/pe/align` 사본을 들고 있으므로 **어느 둘을
 함께 컴파일해도 모듈이 중복 정의된다** — 합성도 회귀도 한 번에 하나만 쓴다.
 
 ---
@@ -288,10 +287,7 @@ golden model 은 순수 파이썬 정수 연산이다
 정렬 · 반올림 · 디코드 · 포화를 RTL 과 문장 단위로 대응시켰고 host floating
 point 를 전혀 쓰지 않으므로, 일치는 시뮬레이터 FPU 가 아니라 설계에 대한 진술이다.
 
-- `transaction` 의 zero point 는 nibble 하나 (v1 broadcast) 또는 PE 당 하나
-  (v2) 를 모두 받는다. RTL 은 전부 v2 지만 계약 자체는 model 에 남겨 두었고,
-  testbench 는 `PCU_ZP_PER_PE` 로 어느 쪽인지 알고 stimulus 와 model 을 함께
-  맞춘다.
+- `transaction`은 현재 RTL과 동일하게 PE별 zero point vector만 받는다.
 - 같은 model 이 `acc_bits` / `acc_rsh` 로 축②도 덮는다. 기본값
   (`32`, `0`) 이 축①을 그대로 재현하므로 testbench 는 하나다.
 - stimulus 는 corner encoding (zero, ±0, 최소 subnormal, subnormal/normal 경계,
@@ -310,25 +306,6 @@ point 를 전혀 쓰지 않으므로, 일치는 시뮬레이터 FPU 가 아니�
 - `pcu_bf16_32_dq` / `pcu_bf16_64_dq` 가 그 위의 wrapper — 스냅샷 슬롯 2 개,
   태그 FIFO 3 개, 배치 시퀀서, PE 별 FP32 누산 bank — 를 end-to-end 로 돌려
   raw INT32, 최종 BF16 벡터, sticky status 를 전부 model 과 맞춘다.
-
-### 5.1 2026-08-16 Fusion-PIMSim 재검증
-
-RTL 소유 범위 밖이지만 이 v2 계약을 쓰는 상위 검증이다.
-
-- directed per-PE ZP: 8/8 accumulator exact
-- Llama-3.1-8B: 32 layer × 7 projection = 224 live Verilator
-- raw INT32: 54,525,952 / 54,525,952 golden exact
-- final BF16: 1,376,256 / 1,376,256 DATE-v2 conformant golden exact
-- four-stack Ramulator: 224/224 serial raw exact, 1,371,416 DRAM cycle
-
-**Captured Standard AutoAWQ final BF16 과는 전체 bit-exact 가 아니다.**
-activation block-floating 정렬과 group reduction 순서가 다르므로 "CUDA AutoAWQ
-exact" 로 표기하지 않는다. WikiText-2 32-document / 128-input-token
-live-feedback PPL 은 BF16 `9.8301211482`, DATE-v2 `10.4910672531` (+6.723682 %)
-이며 224 projection × 128 token = 28,672 Verilator invocation 을 돌렸다. 이는
-127 scored-token bounded 품질 수치이지 full WikiText-2 전체-corpus PPL 이 아니다.
-
----
 
 ## 6. 결과 요약
 
@@ -359,19 +336,16 @@ Nangate45 typical, Yosys 0.52 (ABC area mode) + OpenROAD, 논리 합성까지.
 **16 PE 행 주의.** 위 72,280 um2 는 v2 로 전환한 뒤의 값이다. v1 시절 인용치
 (71,745 um2) 와 직접 비교할 수 없다.
 
-v1 대비 **-342.6 um2 (-0.92 %)**. zero point 를 PE 별로 주면서 면적이 오히려
-줄었고, 순차 면적과 DFF 수는 bit 단위로 같다 — 즉 **표준 AutoAWQ metadata 배치를
-구현하는 데 드는 면적 비용은 0 이다.** 자세한 것은
-[results/designs/awq_p3llm_v2_area_report.md](../results/designs/awq_p3llm_v2_area_report.md).
+과거 v1은 현재 트리와 회귀 대상에 없으므로 현행 면적 표에는 넣지 않는다.
 
 ---
 
-## 7. 남은 것
+## 7. 제약과 후속 평가
 
 - **`ACC_RSH` 최적값을 찾지 않았다.** 기본값은 "group 128 에서 saturate 가 절대
   안 나는 최악 경계" 이지 정확도 최적값이 아니다. 시프트량은 배선이라 면적에는
   거의 영향이 없으나 정확도에는 직접 영향을 준다 — accuracy 스윕이 필요하다.
-- **GPU postprocess 는 축①·②에서 여전히 EXTENSION 이다.** group scale 적용과
+- **축①·②의 외부 postprocess.** group scale 적용과
   output-group reduction 의 latency/PPA 는 그 두 축의 어느 숫자에도 들어 있지
   않다. 축③은 그중 group scale 적용과 BF16 packing 을 PCU 안으로 가져왔으므로
   해당 부분이 면적에 계상돼 있다.

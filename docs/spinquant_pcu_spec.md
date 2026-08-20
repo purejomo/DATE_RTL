@@ -4,16 +4,19 @@ Bank-attached PIM 연산기. SpinQuant (W4A4) 정밀도의 **projection layer GE
 전용** 데이터패스이며, HBM-PIM (ISCA'21, Aquabolt-XL/FIMDRAM) 스타일 16-lane
 FP16 SIMD 연산부를 baseline 으로 삼는다.
 
-- RTL: [rtl/5_spinquant/](../rtl/5_spinquant/)
+- RTL: [rtl/5_spinquant/](../rtl/5_spinquant/) (① base),
+  [rtl/5_spinquant_acc16/](../rtl/5_spinquant_acc16/) (② acc16),
+  [rtl/5_spinquant_dequant_rne/](../rtl/5_spinquant_dequant_rne/) (③ dequant),
+  [rtl/5_spinquant_dequant_requant/](../rtl/5_spinquant_dequant_requant/) (④ requant)
 - Golden model: [verif/models/spinquant_model.py](../verif/models/spinquant_model.py)
 - 회귀: `cd verif && make TEST=spinquant_pcu` (전체는 `make`)
-- 합성: `cd synth && ./run_spinquant.sh`
-- 면적·타이밍 리포트:
-  [results/designs/spinquant_area_report.md](../results/designs/spinquant_area_report.md)
+- 합성: `cd synth && ./run_all.sh synth` (네 비교 축),
+  `./run_spinquant.sh` (base 파라미터·처리량 스윕)
+- 면적: [results/area.csv](../results/area.csv), 타이밍: `results/reports/spinquant_*`
 
-한 줄 요약: **PCU 는 순수 integer dot-product engine 이다.** SpinQuant 의
-수치 구조가 rotation·zero point·scale 을 전부 PCU 밖으로 밀어내므로, 경계 안에
-남는 것은 signed4 × unsigned4 곱셈기 64 개와 그것을 받는 누산기뿐이다.
+base 한 줄 요약: **PCU 는 순수 integer dot-product engine 이다.** SpinQuant 의
+수치 구조가 rotation·zero point·scale 을 전부 PCU 밖으로 밀어낸다. 경계 안에는
+signed4 × unsigned4 곱셈기 64개, 누산기, 2-pump용 read latch와 로컬 제어만 남는다.
 
 ---
 
@@ -259,7 +262,7 @@ module spinquant_pcu_top #(
 | `status_clr_i` | in | 1 | sticky overflow 해제 |
 | `ovf_sticky_o` | out | 1 | 24-bit chain overflow 를 본 적 있다 |
 
-합성 wrapper (`spinquant_pcu_synth.sv`):
+합성 wrapper (`spinquant_pcu.sv` 및 구성별 동명 파일):
 
 | top | chain | read latch | 용도 |
 |---|---|:--:|---|
@@ -349,6 +352,15 @@ PE 단독 (`spinquant_pe`) 은 (weight, activation) 코드쌍 256 개 전수 + w
 one-hot + 누산 경계 + 난수, 누산기 파일 단독 (`spinquant_acc`) 은 두 읽기 포트의
 독립성을 확인한다.
 
+확장축은 별도 source set과 회귀로 검증한다.
+
+| 축 | 회귀 | 확인 내용 |
+|---|---|---|
+| ② | `spinquant_pcu_acc16` | `ACC_RSH=7` RNE narrow, INT16 누산·drain, overflow |
+| ③ | `spinquant_pcu_dq` | raw INT32 + 정수 bias + scale → binary16, lane/tag/status |
+| ④ 변환기 | `spinquant_rq_cvt` | FP32→UINT4 RNE + zero-point + clamp |
+| ④ top | `spinquant_pcu_rq` | 두 pass의 min/max 수집과 최종 UINT4 drain end-to-end |
+
 **harness 가 실제로 잡는지**를 mutation 으로 확인했다:
 
 | 변이 | 결과 |
@@ -361,14 +373,27 @@ one-hot + 누산 경계 + 난수, 누산기 파일 단독 (`spinquant_acc`) 은 
 
 ## 7. 결과 요약
 
-Nangate45 typical, Yosys 0.52 (ABC area mode) + OpenROAD, 논리 합성까지.
-상세는 [results/designs/spinquant_area_report.md](../results/designs/spinquant_area_report.md).
+Nangate45 typical, Yosys 0.52 (ABC area mode) + OpenROAD, 논리 합성까지다.
 
 | | 면적 (um²) | baseline 대비 | MAC/cy | um²/MAC | setup slack |
 |---|---:|---:|---:|---:|---:|
 | HBM-PIM FP16 SIMD 16 lane (baseline) | 60,176 | 1.000x | 16 | 3,761 | — |
 | P3-LLM PCU (FP4/FP8, 16 PE × 4) | 71,287 | 1.185x | 64 | 1,114 | — |
 | **SpinQuant W4A4 PCU (16 PE × 4)** | **32,376** | **0.538x** | **64** | **506** | **+0.88 ns @ 2.0 ns** |
+
+같은 base PCU에서 확장한 네 축은 다음과 같다.
+
+| 축 | top | 출력 | 면적 (um²) | ① 대비 | DFF | setup slack |
+|---|---|---|---:|---:|---:|---:|
+| ① base | `spinquant_pcu` | INT32 | 32,376 | — | 1960 | +0.88 ns |
+| ② acc16 | `spinquant_pcu_acc16` | INT16 | 25,767 | −20.4 % | 1448 | +0.87 ns |
+| ③ dequant_rne | `spinquant_pcu_dq` | binary16 | 40,271 | +24.4 % | 2121 | +0.17 ns |
+| ④ dequant_requant | `spinquant_pcu_rq` | UINT4 | 39,997 | +23.5 % | 2260 | +0.15 ns |
+
+③은 host 재양자화를 남기는 ablation이고, ④가 2-pass min/max와 UINT4 변환까지
+수행해 W4A4 loop를 닫는다. ④가 ③보다 cell 1,062개와 flop 139개를 더 쓰면서 총
+면적은 274 um² 작은 것은 flat 합성의 cross-boundary 재매핑 결과다. 따라서
+requantizer 비용은 총 면적 차가 아니라 **+1,062 cell / +139 flop**으로 읽는다.
 
 - **면적 제약 충족**: baseline 의 53.8 %, 27,800 um² (46.2 %) 절감.
 - 같은 토폴로지의 P3-LLM PCU 대비 **0.454x**.
@@ -433,14 +458,13 @@ RTL 은 `NROW` (한 beat 를 공간적으로 공유하는 activation row 수) �
    대역폭을 2 배로 준다는 **아키텍처 전제**가 따로 필요하고 (bank pair /
    pseudo-channel), 그러면 이 표의 다른 행과 같은 전제 위에 있지 않게 된다.
 
-상세 실측은
-[results/designs/spinquant_area_report.md](../results/designs/spinquant_area_report.md)
-4 절. 검증은 다섯 구성 모두 같은 testbench 로 돈다
+원시 면적은 [results/area.csv](../results/area.csv), setup 경로는 각
+`results/reports/spinquant_*/1_Post_synthesis.rpt`에 있다. 검증은 다섯 구성 모두 같은 testbench로 돈다
 (`make TEST=spinquant_pcu_r2e2` 등).
 
 ---
 
-## 9. 남은 것 (제안)
+## 9. 제약과 후속 평가
 
 - **P1. drain 출력 등록.** 현재 `drain_data_o` 는 누산기 flop 에서 조합으로
   나온다 (P3-LLM `acc_out` 과 같은 방식이라 비교 정합성이 있다). 실 시스템에서
@@ -451,18 +475,9 @@ RTL 은 `NROW` (한 beat 를 공간적으로 공유하는 activation row 수) �
   2 entry 로 바꾸면 2-pump 는 유지한 채 크게 줄지만, 그것은 아키텍처 전제를
   바꾸는 일이므로 스펙 변경 없이는 손대지 않는다.
 - **P3. 전력.** 다른 행과 같은 한계가 있다 — vectorless `-global 0.20` 은
-  활성도를 설계마다 구분하지 않아 셀 수에 거의 비례한다 (README 4 절). 다만
+  활성도를 설계마다 구분하지 않아 셀 수에 거의 비례한다 (루트 README의 측정 조건). 다만
   이 설계는 곱셈기를 가진 전 행 중 pJ/MAC 이 가장 낮다 (0.52).
-- **P4. 비교 3 축 중 ②·③ 이 비어 있다.** awq / p3llm / rabit 은 base 외에
-  acc16 (`*_acc16`) 과 PU 내 dequant (`*_dequant_rne`) 행을 갖는데 SpinQuant 는
-  아직 base 뿐이다. 특히 ③ 은 **이 확장의 원래 동기가 실제로 적용되는 유일한
-  설계**다: 나머지 셋은 activation 이 부동소수점이라 dequant 만 있고 requant 가
-  없지만, W4A4 인 SpinQuant 는 dequant → RNE → INT4 재양자화까지 PU 안에서
-  끝낼 수 있다.
-  - ② 는 파라미터 수준이다. 이 설계는 이미 `ACC_W` 와 `ACC_CHAIN_W` 를 노브로
-    갖고 있고 (`spinquant_pcu_acc32` 행이 그 예), `verif` 도 두 값을
-    환경변수로 받는다.
-  - ③ 은 새 디렉토리 `5_spinquant_dequant_requant` 가 필요하다. top 이름과
-    합성 label 은 기존 행과 겹치지 않게 잡아야 한다 — `run_block_synth.sh` 가
-    `generated/${TOP}.v` 에, `run_all.sh` 가 `${top}_power.rpt` 에 쓰므로 이름이
-    겹치면 두 행이 서로를 덮어쓴다.
+- **P4. 확장축 품질 평가.** ②·③·④ RTL과 bit-exact 회귀, 합성 행은 구현됐다.
+  다만 ②의 `ACC_RSH=7` 정확도는 현재 random-walk 해석치만 있고 실제 모델
+  workload sweep이 없다. ④도 기능 검증을 넘어 end-to-end 모델 품질과 2-pass
+  drain이 시스템 latency에 주는 영향까지 측정해야 한다.

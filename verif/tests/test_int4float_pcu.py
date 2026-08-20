@@ -6,13 +6,7 @@ against. Format, lane count and zero-point layout all come from the
 environment, so one test module covers every AWQ PCU row:
 
     PCU_NUM_PES    8 for the pcu32 tops, 16 for the pcu_top build
-    PCU_ZP_PER_PE  1 = one four-bit zero point per PE (v2). Both AWQ builds
-                       use this: rtl/2_awq_p3llm_8pe_v2 and
-                       rtl/2_awq_p3llm_16pe_v2.
-                   0 = one nibble broadcast to every PE (v1). No RTL in the
-                       tree implements this any more -- the v1 build was
-                       deleted -- but the stimulus and model paths are kept so
-                       the contract stays documented and testable.
+    Zero point      one four-bit value per PE, matching every current AWQ top
     PCU_FMT        bf16 or fp16
     PCU_ACC_W      accumulator width: 32 for the base builds, 16 for acc16
     PCU_ACC_RSH    RNE shift applied before accumulating; 0 for the base
@@ -35,7 +29,6 @@ ITERATIONS = int(os.environ.get("PCU_ITERS", "4000"))
 SEED = 0x50435530
 LANES = 4
 NUM_PES = int(os.environ.get("PCU_NUM_PES", "16"))
-ZP_PER_PE = os.environ.get("PCU_ZP_PER_PE", "0") == "1"
 ACC_W = int(os.environ.get("PCU_ACC_W", "32"))
 ACC_RSH = int(os.environ.get("PCU_ACC_RSH", "0"))
 ACC_MASK = (1 << ACC_W) - 1
@@ -77,13 +70,8 @@ async def test_random_tiles(dut) -> None:
                 for _ in range(LANES)]
         weights = [[rng.randrange(16) for _ in range(LANES)]
                    for _ in range(NUM_PES)]
-        # v2 gives each output PE its own zero point; v1 broadcasts one
-        # nibble. Drive the port the design actually has, and hand the model
-        # the matching spelling.
-        zp = ([rng.randrange(16) for _ in range(NUM_PES)] if ZP_PER_PE
-              else rng.randrange(16))
-        zp_word = (sum(z << (4 * pe) for pe, z in enumerate(zp))
-                   if ZP_PER_PE else zp)
+        zp = [rng.randrange(16) for _ in range(NUM_PES)]
+        zp_word = sum(z << (4 * pe) for pe, z in enumerate(zp))
         ref = reference_exponent(FMT, acts)
         clear = iteration % 64 == 0
         enable = True
@@ -127,9 +115,8 @@ async def test_random_tiles(dut) -> None:
             f"iteration {iteration}: o_invalid mismatch"
         await RisingEdge(dut.clk)
 
-    layout = "per-PE zp" if ZP_PER_PE else "broadcast zp"
     dut._log.info(
         f"{ITERATIONS} tiles matched the reference "
         f"({os.environ.get('PCU_FMT', 'bf16')} activations, "
-        f"{NUM_PES} PEs, {layout})"
+        f"{NUM_PES} PEs, per-PE zp)"
     )

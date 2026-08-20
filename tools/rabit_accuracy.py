@@ -263,7 +263,7 @@ def main(argv=None) -> int:
         "contributes up to NIN * 2**MANT_W\n  = 16384 accumulator LSB, so a "
         "din = 4096 sweep (256 chunks) needs 23 bits\n  and a 16-bit "
         "accumulator clamps. The area it saves is real (45,254 ->\n"
-        "  32,209 um2 at 250 MHz); the k depth it can represent is the price."
+        "  32,209 um2 at the 500 MHz target); the k depth it can represent is the price."
     )
     print(
         "- **These rows hold h = 1** (see `_fit_row`), which keeps the block "

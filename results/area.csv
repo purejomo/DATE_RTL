@@ -12,16 +12,7 @@ rabit_pcu_m10_noshift_250,rabit_pcu_m10_noshift,44348.850000,36390,2184,4.0
 rabit_blk_cvt_250,rabit_blk_cvt,5002.130000,4956,0,4.0
 rabit_blk_pe_250,rabit_blk_pe,3693.410000,3767,17,4.0
 rabit_blk_acc_250,rabit_blk_acc,20871.690000,15694,2048,4.0
-rabit_pcu_fs_250,rabit_pcu_fs,93522.408000,79921,4208,4.0
-rabit_pcu_fs_500,rabit_pcu_fs,93522.408000,79921,4208,2.0
-rabit_pcu_fs_h16_250,rabit_pcu_fs_h16,106276.842000,90704,4463,4.0
-rabit_fs_blk_hscale_250,rabit_fs_blk_hscale,20650.910000,17771,773,4.0
-rabit_fs_blk_gbuf_250,rabit_fs_blk_gbuf,12484.444000,9055,1093,4.0
-rabit_fs_blk_dq_250,rabit_fs_blk_dq,28083.216000,25320,703,4.0
-rabit_fs_blk_hscale_500,rabit_fs_blk_hscale,20650.910000,17771,773,2.0
-rabit_fs_blk_dq_500,rabit_fs_blk_dq,28083.216000,25320,703,2.0
-rabit_pcu_fs_p_250,rabit_pcu_fs_p,94840.970000,79200,4467,4.0
-rabit_pcu_fs_p_500,rabit_pcu_fs_p,94840.970000,79200,4467,2.0
+rabit_pcu_fs_500,rabit_pcu_fs,65421.636000,55890,2948,2.0
 spinquant_pcu_500,spinquant_pcu,32375.924000,25843,1960,2.0
 spinquant_pcu_250,spinquant_pcu,32375.924000,25843,1960,4.0
 spinquant_pcu_acc32_500,spinquant_pcu_acc32,40390.238000,31094,2472,2.0
@@ -42,6 +33,7 @@ int4bf16_pcu32_acc16_500,int4bf16_pcu32_acc16,36193.822000,31671,1438,2.0
 int4bf16_pcu_top_acc16_500,int4bf16_pcu_top_acc16,68569.480000,60168,2798,2.0
 p3llm_pcu_acc16_500,p3llm_pcu_acc16,62151.964000,55517,2338,2.0
 rabit_pcu_acc16_250,rabit_pcu_acc16,32208.876000,27348,1168,4.0
+rabit_pcu_acc16_500,rabit_pcu_acc16,32208.876000,27348,1168,2.0
 int4bf16_pcu32_dq_500,int4bf16_pcu32_dq,61701.892000,50346,3597,2.0
 int4bf16_pcu_top_dq_500,int4bf16_pcu_top_dq,105060.690000,85639,6336,2.0
 spinquant_pcu_acc16_500,spinquant_pcu_acc16,25767.420000,20347,1448,2.0

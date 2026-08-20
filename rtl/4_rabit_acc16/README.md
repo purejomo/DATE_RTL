@@ -8,7 +8,7 @@
 | ② acc16 | **이 디렉토리** | `ACC_W = 16`, 정렬 우측 시프트에서 RNE |
 | ③ dequant_rne | `4_rabit_dequant_rne` | 32b 누산 → g 스케일 → binary16 RNE 출력 |
 
-RTL 파일은 `4_rabit`의 사본이고, **바뀐 것은 `rabit_pcu_synth.sv`의 wrapper
+RTL 파일은 `4_rabit`의 사본이고, **바뀐 것은 `rabit_pcu_acc16.sv`의 wrapper
 하나뿐**이다. 새 산술 로직은 없다.
 
 - top: `rabit_pcu_acc16`
@@ -40,3 +40,11 @@ RTL 파일은 `4_rabit`의 사본이고, **바뀐 것은 `rabit_pcu_synth.sv`의
 `rabit_acc_regfile`이 `NSLOT × NPE × ACC_W` = 8 × 8 × 32 = 2048b 에서 1024b로
 줄어든다. 이 배열이 RaBiT 합성 경계 안의 최대 storage이므로 절감이 면적 표에
 바로 잡힌다.
+
+| 축 | 클록 | 면적 (µm²) | base 대비 |
+|---|---:|---:|---:|
+| ① base | 500 MHz 목표 | 45,254 | — |
+| ② acc16 | 500 MHz 목표 | 32,209 | −28.8% |
+
+두 행 모두 Nangate45, 2.0 ns constraint, ABC area mode로 합성했다. setup slack은
+각각 −0.04 ns와 −0.09 ns라 500 MHz는 아직 timing-closed가 아니다.

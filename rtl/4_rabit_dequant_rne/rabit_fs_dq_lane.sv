@@ -32,8 +32,8 @@ module rabit_fs_dq_lane #(
     parameter int MANT_W = 12,
     parameter int EXP_W  = 6,
     // derived; do not override
-    parameter int QW     = 23,   // (MANT_W + 1) x 11 product, 12 x 11 by default
-    parameter int FW     = 10    // signed exponent of the product LSB
+    parameter int QW     = MANT_W + 11,
+    parameter int FW     = 8     // signed exponent of the product LSB
 ) (
     input  logic signed [ACC_W-1:0] acc_i,
     input  logic [15:0]             g_i,
@@ -185,7 +185,7 @@ module rabit_fs_dq_lane #(
 
 `ifndef SYNTHESIS
     initial begin
-        if (QW != (MANT_W + 1) + 11)
+        if (QW != MANT_W + 11)
             $fatal(1, "rabit_fs_dq_lane: QW is derived from MANT_W, do not override it");
     end
 `endif

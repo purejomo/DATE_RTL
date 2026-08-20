@@ -44,7 +44,7 @@ FINAL_EXISTING_LABELS = (
     "p3llm_pcu_500",
     # RaBiT carries mul = 0: the weight is one bit, so there is no multiplier to
     # count. Its MAC/cy is the number of signed products accepted per cycle.
-    "rabit_pcu_250",
+    "rabit_pcu_500",
     # SpinQuant W4A4: the same 16 PE x 4 way organization as the P3-LLM row
     # directly above it, with both operands narrowed to 4-bit integers and the
     # decode/align/scale hardware gone.
@@ -62,6 +62,8 @@ CSV_FIELDS = (
     "µm²/MAC",
     "Power W",
     "pJ/MAC",
+    "setup_slack_ns",
+    "timing_met",
 )
 
 TOTAL_POWER_RE = re.compile(
@@ -178,6 +180,7 @@ def measured_row(
     entry: dict,
     area_source: pathlib.Path,
     power_dir: pathlib.Path,
+    report_dir: pathlib.Path,
     netlist: pathlib.Path | None = None,
 ) -> dict:
     """Validate and normalize one measured 45nm row before projection."""
@@ -190,6 +193,17 @@ def measured_row(
     area = finite_float(entry.get("area_um2"), source=area_source, field="area_um2")
     if area <= 0.0:
         raise ValueError(f"{area_source}: non-positive area for {design}: {area}")
+    report = report_dir / entry["label"] / "1_Post_synthesis.rpt"
+    if not report.is_file():
+        raise FileNotFoundError(f"missing timing report: {report}")
+    match = re.search(
+        r"Post synthesis report_checks -path_delay max.*?"
+        r"^\s*([-+]?\d+(?:\.\d+)?)\s+slack \((?:MET|VIOLATED)\)",
+        report.read_text(encoding="utf-8"), re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        raise ValueError(f"{report}: missing max-delay setup slack")
+    slack = finite_float(match.group(1), source=report, field="setup slack")
     return {
         "design": design,
         "mhz": mhz,
@@ -198,6 +212,7 @@ def measured_row(
         "mac_per_cycle": float(mac_per_cycle),
         "area45": area,
         "power45": power_of(power_dir, top, netlist),
+        "setup_slack_ns": slack,
     }
 
 
@@ -221,6 +236,7 @@ def collect() -> list[dict]:
             entry=area_rows[label],
             area_source=area_path,
             power_dir=RESULTS / "power",
+            report_dir=RESULTS / "reports",
             netlist=HERE.parent / "build" / "results" / label / "1_synth.v",
         ))
 
@@ -262,6 +278,8 @@ def project(row: dict) -> dict[str, str | int]:
         "µm²/MAC": f"{area22 / mac_per_cycle:.0f}",
         "Power W": "" if power22 is None else f"{power22:.4f}",
         "pJ/MAC": "" if pj_per_mac22 is None else f"{pj_per_mac22:.2f}",
+        "setup_slack_ns": f"{row['setup_slack_ns']:+.2f}",
+        "timing_met": "yes" if row["setup_slack_ns"] >= 0 else "no",
     }
 
 
