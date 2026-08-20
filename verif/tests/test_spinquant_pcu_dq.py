@@ -26,8 +26,8 @@ from spinquant_model import NWAY, SpinQuantPcu, pack_acts, pack_beat
 from awq_dequant_model import fp32_to_float16
 from spinquant_dequant_model import FP16, dequant_lane
 
-NPE = 16
-NLANE = 16
+NPE = int(os.environ.get("SPINQUANT_NPE", "16"))
+NLANE = NPE
 NENTRY = 4
 A_MAX = 15
 W_MIN = -8

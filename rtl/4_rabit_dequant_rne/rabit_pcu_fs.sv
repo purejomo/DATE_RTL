@@ -50,7 +50,7 @@ module rabit_pcu_fs (
 
     rabit_pcu_fs_top #(
         .MANT_W(12), .SHIFTER_EN(1), .NOUT_PER_WORD(8),
-        .PE_LANES(8), .NPATH(2), .ACC_W(ACC_W),
+        .PE_LANES(4), .NPATH(2), .ACC_W(ACC_W),
         .H_FMT(0), .H_MUL_PIPE(1), .NMULT_H(16),
         .DQ_LANES(1), .ALIGN_MAX(16)
     ) u_pcu (

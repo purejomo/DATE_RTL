@@ -8,14 +8,9 @@ depends on:
              per-token reduction across banks
     pass 2   drive with t[i] = s[i]/s_a'; the engine emits unsigned INT4
 
-The test does not model how the NPU turns (min, max) into s_a' and zp_a' -- that
-is software's business and the hardware makes no promise about it. What is
-checked is the contract the hardware does make: given a scale and a zero point,
-the INT4 it produces is RNE(dequantized) + zp clamped into [0, 15], and the
-retained binary16 output is the same number the axis-3 row would have produced.
-That second check is what keeps KEEP_FP16_OUT honest: it is what makes this
-directory a strict superset of the axis-3 one, so the two rows differ by the
-requantizer and nothing else.
+The test checks min/max, UINT4 RNE/zero-point/clamp, and the raw accumulator.
+The optional binary16 output is compared with axis 3 when enabled and checked
+as zero when disabled.
 """
 
 from __future__ import annotations
@@ -36,8 +31,9 @@ from spinquant_dequant_model import (
     requant_int4,
 )
 
-NPE = 16
-NLANE = 16
+NPE = int(os.environ.get("SPINQUANT_NPE", "16"))
+KEEP_FP16 = int(os.environ.get("SPINQUANT_KEEP_FP16", "1"))
+NLANE = NPE
 NENTRY = 4
 A_MAX = 15
 W_MIN = -8
@@ -197,11 +193,17 @@ async def test_requant_two_pass(dut) -> None:
                 f"got INT4 {q4}, expected {want_q4}"
             )
             want_fp16 = fp32_to_float16(fp32s[lane], FP16)
-            assert fp16 == want_fp16, (
-                f"round {round_index} lane {lane}: retained binary16 "
-                f"0x{fp16:04x} does not match the axis-3 value "
-                f"0x{want_fp16:04x}"
-            )
+            if KEEP_FP16:
+                assert fp16 == want_fp16, (
+                    f"round {round_index} lane {lane}: retained binary16 "
+                    f"0x{fp16:04x} does not match the axis-3 value "
+                    f"0x{want_fp16:04x}"
+                )
+            else:
+                assert fp16 == 0, (
+                    f"round {round_index} lane {lane}: disabled binary16 "
+                    f"output is 0x{fp16:04x}"
+                )
 
         # The raw drain must be untouched by either pass.
         await FallingEdge(dut.clk)

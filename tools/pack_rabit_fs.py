@@ -73,6 +73,8 @@ from rabit_model import PcuGolden, dequantize
 # cycles. One group drain holds the accumulator port for GROUP_DRAIN_CYCLES;
 # the four group drains together cover the 32-output stripe.
 CYCLES_PER_SLOT = 2
+RD_PORT_CYCLES = 4
+RD_SLOTS = RD_PORT_CYCLES // CYCLES_PER_SLOT
 DRAIN_PORT_CYCLES = fs.GROUP_DRAIN_CYCLES
 
 
@@ -257,7 +259,7 @@ def slot_cost_fs(n_kchunks: int, n_stripes: int, *, h_fmt: int = H_FMT_FP8) -> d
 
     per_chunk_writes = 2 if h_fmt == H_FMT_FP8 else 1 + NPATH
     write = per_chunk_writes * n_kchunks * n_stripes
-    read = NGROUP * n_kchunks * n_stripes
+    read = NGROUP * RD_SLOTS * n_kchunks * n_stripes
     g_load = G_WORDS * n_stripes
     drain_cmd = G_WORDS * n_stripes
     drain_stall = (
@@ -307,8 +309,14 @@ def simulate_slots(cmds: Sequence[FsCommand]) -> dict:
     for cmd in cmds:
         counts[cmd.kind] += 1
     stall = counts["DQ"] * (DRAIN_PORT_CYCLES // CYCLES_PER_SLOT)
-    total = sum(counts.values()) + stall
-    return {"counts": counts, "drain_stall": stall, "total_slots": total}
+    rd_extra = counts["RD"] * (RD_SLOTS - 1)
+    total = sum(counts.values()) + rd_extra + stall
+    return {
+        "counts": counts,
+        "rd_extra": rd_extra,
+        "drain_stall": stall,
+        "total_slots": total,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -453,10 +461,10 @@ def _self_test() -> int:
         print(f"FAIL: per-stripe overhead {counts}")
         return 1
 
-    # The inner loop must be identical to the base one: six commands per chunk.
-    inner = counts["WR_H"] + counts["WR_X"] + counts["RD"]
-    if inner != 6 * packing.n_kchunks:
-        print(f"FAIL: inner loop is {inner} slots, base is {6*packing.n_kchunks}")
+    # Four folded reads cost two slots each; the two writes remain one slot.
+    inner = counts["WR_H"] + counts["WR_X"] + counts["RD"] * RD_SLOTS
+    if inner != 10 * packing.n_kchunks:
+        print(f"FAIL: folded inner loop is {inner} slots, expected {10*packing.n_kchunks}")
         return 1
 
     # FP8 round trip of the derived scales.
@@ -468,7 +476,7 @@ def _self_test() -> int:
 
     print(
         f"self-test OK: {dout}x{din}, inner loop {inner} slots "
-        f"(base {6*packing.n_kchunks}), stripe overhead "
+        f"(8PE base {6*packing.n_kchunks}), stripe overhead "
         f"{closed['g_load']} g + {closed['drain_cmd'] + closed['drain_stall']} drain"
     )
     return 0

@@ -19,11 +19,15 @@ HBM-PIM 기준 연산기와 네 가지 최적화 축의 RTL이다. 면적은 Nan
 | [3_p3llm_dequant_rne/](3_p3llm_dequant_rne/) | P3-LLM | ③ dequant_rne | 16 PE / 500 MHz | FP8-E4M3 | 106,359 | +49.2% |
 | [4_rabit/](4_rabit/) | RaBiT | ① base | 8 PE / 500 MHz | INT32 | 45,254 | — |
 | [4_rabit_acc16/](4_rabit_acc16/) | RaBiT | ② acc16 | 8 PE / 500 MHz | INT16 | 32,209 | −28.8% |
-| [4_rabit_dequant_rne/](4_rabit_dequant_rne/) | RaBiT | ③ dequant_rne | 8 PE / 500 MHz | FP16 | 65,422 | +44.6% |
+| [4_rabit_dequant_rne/](4_rabit_dequant_rne/) | RaBiT | ③ dequant_rne | folded 4 PE / 500 MHz | FP16 | 56,006 | +23.8% |
 | [5_spinquant/](5_spinquant/) | SpinQuant | ① base | 16 PE / 500 MHz | INT32 | 32,376 | — |
 | [5_spinquant_acc16/](5_spinquant_acc16/) | SpinQuant | ② acc16 | 16 PE / 500 MHz | INT16 | 25,767 | −20.4% |
 | [5_spinquant_dequant_rne/](5_spinquant_dequant_rne/) | SpinQuant | ③ dequant_rne | 16 PE / 500 MHz | FP16 | 40,271 | +24.4% |
 | [5_spinquant_dequant_requant/](5_spinquant_dequant_requant/) | SpinQuant | ④ dequant_requant | 16 PE / 500 MHz | UINT4 | 39,997 | +23.5% |
+| [5_spinquant_v2/](5_spinquant_v2/) | SpinQuant v2 | ① base | 32 PE / 500 MHz | INT32 | 64,345 | — |
+| [5_spinquant_v2_acc16/](5_spinquant_v2_acc16/) | SpinQuant v2 | ② acc16 | 32 PE / 500 MHz | INT16 | 51,191 | −20.4% |
+| [5_spinquant_v2_dequant_rne/](5_spinquant_v2_dequant_rne/) | SpinQuant v2 | ③ dequant_rne | 32 PE / 500 MHz | FP16 | 68,391 | +6.3% |
+| [5_spinquant_v2_dequant_requant/](5_spinquant_v2_dequant_requant/) | SpinQuant v2 | ④ dequant_requant | 32 PE / 500 MHz | UINT4 | 68,389 | +6.3% |
 
 ## 축 설명
 
@@ -34,9 +38,11 @@ HBM-PIM 기준 연산기와 네 가지 최적화 축의 RTL이다. 면적은 Nan
 | ③ dequant_rne | PCU에서 다음 activation 형식으로 dequant 및 RNE 변환 |
 | ④ dequant_requant | dequant 후 UINT4 재양자화; SpinQuant 전용 |
 
-RaBiT ③은 입력 스케일 `s_in × x`도 내부에서 처리한다. 8 PE compute 경로,
+RaBiT ③은 입력 스케일 `s_in × x`도 내부에서 처리한다. 4 PE 2-fold compute 경로,
 27-bit exact accumulator, 그룹 단위 256-bit 출력 스케일 버퍼와 1-lane dequant/RNE를
 사용한다.
+
+SpinQuant v2는 32 PE와 512-bit weight beat를 사용한다. ④는 UINT4 전용이다.
 
 ## 파일 규칙
 

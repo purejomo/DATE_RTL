@@ -1,22 +1,15 @@
-"""Full-scale RaBiT PCU: bit-exact regression against the golden model.
+"""Folded 4PE RaBiT dequant_rne regression against the golden model.
 
-The design under test is ``rabit_pcu_fs`` (or ``rabit_pcu_fs_h16`` for the
-FP16_3WR fallback). The input GRF is outside the synthesis boundary, so it lives
-here as a shadow register file: the testbench watches cvt_we_o / cvt_entry_o /
-cvt_blk_o and plays the entry back on grf_blk_i, exactly as the base variant's
-testbench does.
+The input GRF is outside the synthesis boundary. The testbench stores
+``cvt_blk_o`` and returns the selected entry through ``grf_blk_i``.
 
 Command stream, one column slot = two PCU cycles:
 
     per chunk    WR_H, WR_X, RD og0, RD og1, RD og2, RD og3
     per stripe   (WR_G group, dequantize group) x 4
 
-The checks are:
-  * every y beat matches ``PcuFsGolden`` bit for bit;
-  * the raw debug drain still matches the base contract;
-  * the design's own assertions (RABIT_FS_ASSERTIONS) hold, which covers the
-    u_p deadline, the g-buffer precondition and the drain/read exclusion;
-  * the drain occupies the number of accumulator-port cycles the report claims.
+Checks: bit-exact FP16 output, raw drain compatibility, interface assertions,
+four-cycle folded reads and the configured drain cycle count.
 """
 
 from __future__ import annotations
@@ -52,7 +45,7 @@ NOUT_PER_WORD = int(os.environ.get("RABIT_FS_NOUT", "8"))
 DQ_LANES = int(os.environ.get("RABIT_FS_DQ_LANES", "1"))
 OUT_LANES = int(os.environ.get("RABIT_FS_OUT_LANES", str(DQ_LANES)))
 MANT_W = int(os.environ.get("RABIT_FS_MANT_W", "12"))
-RD_CYCLES = int(os.environ.get("RABIT_FS_RD_CYCLES", "2"))
+RD_CYCLES = int(os.environ.get("RABIT_FS_RD_CYCLES", "4"))
 ACC_W = int(os.environ.get("RABIT_FS_ACC_W", "27"))
 NOUT_STRIPE = NGROUP * NOUT_PER_WORD
 NHALF = NOUT_PER_WORD // DQ_LANES
@@ -71,7 +64,7 @@ Y_BEATS_PER_GROUP = NOUT_PER_WORD // OUT_LANES
 
 
 def h_fmt_of(dut) -> int:
-    """FP8 by default; the Makefile sets RABIT_FS_H_FMT=1 for the h16 wrapper."""
+    """Return the input-scale format selected by the test environment."""
 
     return H_FMT_FP16 if os.environ.get("RABIT_FS_H_FMT", "0") == "1" else H_FMT_FP8
 

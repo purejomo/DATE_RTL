@@ -20,11 +20,15 @@ Nangate45 논리 합성 결과다. 모든 값은 연산 데이터패스와 누�
 | P3-LLM (FP4/FP8) | ③ dequant_rne | 16 PE / 500 MHz | FP8-E4M3 | 106,359 | 1.767x | +49.2% |
 | RaBiT (RB2/FP16) | ① base | 8 PE / 500 MHz | INT32 | 45,254 | 0.752x | — |
 | RaBiT (RB2/FP16) | ② acc16 | 8 PE / 500 MHz | INT16 | 32,209 | 0.535x | −28.8% |
-| RaBiT (RB2/FP16) | ③ dequant_rne | 8 PE / 500 MHz | FP16 | 65,422 | 1.087x | +44.6% |
+| RaBiT (RB2/FP16) | ③ dequant_rne | folded 4 PE / 500 MHz | FP16 | 56,006 | 0.931x | +23.8% |
 | SpinQuant (INT4/INT4) | ① base | 16 PE / 500 MHz | INT32 | 32,376 | 0.538x | — |
 | SpinQuant (INT4/INT4) | ② acc16 | 16 PE / 500 MHz | INT16 | 25,767 | 0.428x | −20.4% |
 | SpinQuant (INT4/INT4) | ③ dequant_rne | 16 PE / 500 MHz | FP16 | 40,271 | 0.669x | +24.4% |
 | SpinQuant (INT4/INT4) | ④ dequant_requant | 16 PE / 500 MHz | UINT4 | 39,997 | 0.665x | +23.5% |
+| SpinQuant v2 (INT4/INT4) | ① base | 32 PE / 500 MHz | INT32 | 64,345 | 1.069x | — |
+| SpinQuant v2 (INT4/INT4) | ② acc16 | 32 PE / 500 MHz | INT16 | 51,191 | 0.851x | −20.4% |
+| SpinQuant v2 (INT4/INT4) | ③ dequant_rne | 32 PE / 500 MHz | FP16 | 68,391 | 1.137x | +6.3% |
+| SpinQuant v2 (INT4/INT4) | ④ dequant_requant | 32 PE / 500 MHz | UINT4 | 68,389 | 1.136x | +6.3% |
 
 원시 결과는 [results/area.csv](results/area.csv), 상세 비교는
 [RTL 요약](rtl/README.md)에서 확인한다.
@@ -40,6 +44,8 @@ Nangate45 논리 합성 결과다. 모든 값은 연산 데이터패스와 누�
 
 HBM-PIM은 비교 기준이므로 확장축이 없다.
 RaBiT ③은 입력 스케일 `s_in × x`와 출력 dequant/RNE를 모두 PCU 내부에서 처리한다.
+SpinQuant v2는 모든 축이 32 PE이며 512-bit weight beat가 필요하다. ④는 UINT4 전용으로
+FP16 보조 출력 packer를 제외한다. v2 ①은 16 PE ①보다 면적이 98.7% 크다.
 
 ## 실행
 
@@ -47,11 +53,12 @@ RaBiT ③은 입력 스케일 `s_in × x`와 출력 dequant/RNE를 모두 PCU �
 
 ```bash
 cd synth
-./run_all.sh                   # 전체
+./run_all.sh                   # 기본 비교축
 ./run_all.sh synth|power|table # 단계별
 ./run_rabit.sh                 # RaBiT 스윕
 ./run_rabit_fs.sh              # 최종 RaBiT dequant_rne
 ./run_spinquant.sh             # SpinQuant 스윕
+./run_spinquant_v2.sh          # SpinQuant 32 PE v2
 ```
 
 검증:
